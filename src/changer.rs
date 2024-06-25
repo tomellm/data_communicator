@@ -2,7 +2,8 @@ use std::fmt::Debug;
 
 use tokio::sync::{mpsc, watch};
 
-use super::communicator::GetKey;
+use crate::storage::GetKey;
+
 
 pub struct Action<Key, Value>
 where
