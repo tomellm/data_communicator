@@ -1,4 +1,7 @@
+#![feature(extract_if)]
 //! some docs
+
+pub mod buffered;
 
 pub mod changer;
 pub mod communicator;
