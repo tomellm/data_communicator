@@ -12,8 +12,8 @@ pub mod utils;
 use changer::Response;
 use communicator::Communicator;
 use lazy_async_promise::{ImmediateValuePromise, ImmediateValueState};
-use storage::{GetKey, Storage};
 use std::collections::HashMap;
+use storage::{GetKey, Storage};
 use tokio::sync::{mpsc, watch};
 
 pub struct DataContainer<Key, Value, Writer>

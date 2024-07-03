@@ -1,6 +1,9 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use tokio::sync::{mpsc, oneshot::{self, error::RecvError}};
+use tokio::sync::{
+    mpsc,
+    oneshot::{self, error::RecvError},
+};
 use uuid::Uuid;
 
 use super::{data::FreshData, KeyBounds, ValueBounds};
@@ -8,7 +11,7 @@ use super::{data::FreshData, KeyBounds, ValueBounds};
 pub struct DataQuery<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     pub origin_uuid: Uuid,
     pub response_sender: oneshot::Sender<QueryResult>,
@@ -18,14 +21,21 @@ where
 impl<Key, Value> DataQuery<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     pub fn from_type(
         origin_uuid: Uuid,
-        query_type: QueryType<Key, Value>
-    ) -> (Self, oneshot::Receiver<QueryResult>)  {
+        query_type: QueryType<Key, Value>,
+    ) -> (Self, oneshot::Receiver<QueryResult>) {
         let (sender, reciver) = oneshot::channel::<QueryResult>();
-        (Self { origin_uuid, response_sender: sender, query_type }, reciver)
+        (
+            Self {
+                origin_uuid,
+                response_sender: sender,
+                query_type,
+            },
+            reciver,
+        )
     }
 }
 
@@ -34,7 +44,7 @@ pub type Predicate<Value> = Box<dyn Fn(&Value) -> bool + Send + Sync>;
 pub enum QueryType<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     GetById(Key),
     GetByIds(Vec<Key>),
@@ -45,7 +55,7 @@ where
 pub enum QueryResponse<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     // TODO: I dont think that the hashmap is needed. A vec should be enought
     // but the compiler doesnt allow me to keep the Key generic If I dont use it.
@@ -54,15 +64,15 @@ where
     Err(QueryError),
 }
 
-impl<Key, Value> From<QueryResponse<Key, Value>> for (Option<FreshData<Key, Value>>, QueryResult) 
+impl<Key, Value> From<QueryResponse<Key, Value>> for (Option<FreshData<Key, Value>>, QueryResult)
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     fn from(value: QueryResponse<Key, Value>) -> Self {
         match value {
             QueryResponse::Ok(fresh_data) => (Some(fresh_data), QueryResult::Success),
-            QueryResponse::Err(err) => (None, QueryResult::Error(err))
+            QueryResponse::Err(err) => (None, QueryResult::Error(err)),
         }
     }
 }
@@ -70,7 +80,7 @@ where
 #[derive(Clone, Debug)]
 pub enum QueryResult {
     Success,
-    Error(QueryError)
+    Error(QueryError),
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +97,6 @@ impl QueryError {
     }
 }
 
-
 impl Display for QueryError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}", self)
@@ -99,7 +108,7 @@ impl From<Result<QueryResult, RecvError>> for QueryResult {
     fn from(value: Result<QueryResult, RecvError>) -> Self {
         match value {
             Ok(result) => result,
-            Err(err) => QueryResult::Error(QueryError::ChannelRecive(err))
+            Err(err) => QueryResult::Error(QueryError::ChannelRecive(err)),
         }
     }
 }

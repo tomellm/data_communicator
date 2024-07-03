@@ -43,14 +43,12 @@ pub mod test {
     impl Storage<Uuid, Item> for TestStruct {
         type InitArgs = Arc<Mutex<HashMap<Uuid, Item>>>;
         async fn init(args: Self::InitArgs) -> Self {
-            TestStruct {
-                map: args
-            }
+            TestStruct { map: args }
         }
         fn update_many(&mut self, values: &Vec<Item>) -> impl StorageFuture<ChangeResult> {
             let tuples = values.clone().into_iter().map(|i| (i.key().clone(), i));
             let map = self.map.clone();
-            async move { 
+            async move {
                 map.lock().await.extend(tuples);
                 ChangeResult::Success
             }
@@ -81,8 +79,9 @@ pub mod test {
         }
         fn get_by_id(&mut self, key: Uuid) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
-            async move { 
-                map.lock().await
+            async move {
+                map.lock()
+                    .await
                     .get(&key)
                     .map(|item| QueryResponse::Ok(item.clone().into()))
                     .unwrap_or(QueryResponse::Err(QueryError::NotPresent))
@@ -90,15 +89,16 @@ pub mod test {
         }
         fn get_by_ids(&mut self, keys: Vec<Uuid>) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
-            async move { 
+            async move {
                 QueryResponse::Ok(
-                    map.lock().await
-                    .iter()
-                    .filter(|(k, _)| keys.contains(k))
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
-                    .into(),
-                    )
+                    map.lock()
+                        .await
+                        .iter()
+                        .filter(|(k, _)| keys.contains(k))
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect::<HashMap<_, _>>()
+                        .into(),
+                )
             }
         }
         fn get_by_predicate(
@@ -106,15 +106,16 @@ pub mod test {
             predicate: Predicate<Item>,
         ) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
-            async move { 
+            async move {
                 QueryResponse::Ok(
-                    map.lock().await
-                    .iter()
-                    .filter(|(_, v)| predicate(v))
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>()
-                    .into(),
-                    )
+                    map.lock()
+                        .await
+                        .iter()
+                        .filter(|(_, v)| predicate(v))
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect::<HashMap<_, _>>()
+                        .into(),
+                )
             }
         }
     }

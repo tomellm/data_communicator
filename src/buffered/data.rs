@@ -19,9 +19,11 @@ where
     Value: ValueBounds<Key>,
 {
     pub fn new() -> Self {
-        Self { data: HashMap::new() }
+        Self {
+            data: HashMap::new(),
+        }
     }
-    
+
     pub fn update_with_fresh(&mut self, fresh_data: FreshData<Key, Value>) {
         self.data.extend(HashMap::from(fresh_data))
     }
@@ -88,7 +90,6 @@ where
     fn from(value: FreshData<Key, Value>) -> Self {
         value.0
     }
-    
 }
 
 #[derive(Clone)]

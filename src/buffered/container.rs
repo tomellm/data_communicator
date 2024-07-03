@@ -240,7 +240,11 @@ where
             .insert(communicator_uuid.clone(), query_sender);
     }
     fn send_update(&self, update: DataChange<Key, Value>, targets: Vec<&Uuid>) {
-        event!(Level::TRACE, "Sending change data to {} targets", targets.len());
+        event!(
+            Level::TRACE,
+            "Sending change data to {} targets",
+            targets.len()
+        );
         self.change_senders
             .iter()
             .filter(|(uuid, _)| targets.contains(uuid))
@@ -251,7 +255,11 @@ where
     }
 
     fn send_fresh_data(&self, fresh_data: FreshData<Key, Value>, target: &Uuid) {
-        event!(Level::TRACE, "Sending fresh data to communicator {}", target);
+        event!(
+            Level::TRACE,
+            "Sending fresh data to communicator {}",
+            target
+        );
         self.query_senders
             .get(target)
             // FIXME: Not sure if this can be a blocking send

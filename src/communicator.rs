@@ -8,7 +8,6 @@ use crate::storage::GetKey;
 
 use super::changer;
 
-
 #[derive(Clone)]
 pub struct Communicator<Key, Value>
 where
@@ -28,9 +27,7 @@ where
         viewer: watch::Receiver<HashMap<Key, Value>>,
         changer: changer::Sender<Key, Value>,
     ) -> Self {
-        Self {
-            viewer, changer
-        }
+        Self { viewer, changer }
     }
     pub fn view(&self) -> Ref<'_, HashMap<Key, Value>> {
         self.viewer.borrow()

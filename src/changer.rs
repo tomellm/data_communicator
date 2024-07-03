@@ -4,7 +4,6 @@ use tokio::sync::{mpsc, watch};
 
 use crate::storage::GetKey;
 
-
 pub struct Action<Key, Value>
 where
     Key: Clone + Send + Sync,

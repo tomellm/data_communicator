@@ -30,7 +30,12 @@ where
     ) -> Self {
         let sender = Sender::new(change_sender, query_sender);
         let reciver = Reciver::new(change_data_reciver, fresh_data_reciver);
-        Self { uuid, sender, reciver, data: Data::new() }
+        Self {
+            uuid,
+            sender,
+            reciver,
+            data: Data::new(),
+        }
     }
     /// Recives any new updates and then updates the internal data accordingly
     pub fn state_update(&mut self) {
