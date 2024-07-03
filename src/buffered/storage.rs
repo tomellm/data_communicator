@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
 
@@ -16,7 +14,7 @@ where
     Value: ValueBounds<Key>,
 {
     type InitArgs;
-    fn init(args: Self::InitArgs) -> impl std::future::Future<Output = Self> + Send;
+    fn init(args: Self::InitArgs) -> impl InitFuture<Self>;
     fn handle_change(
         &mut self,
         action: ChangeType<Key, Value>,
@@ -34,10 +32,10 @@ where
             ))
         })
     }
-    fn update(&mut self, value: &Value) -> impl StorageFuture<ChangeResult>;
-    fn update_many(&mut self, values: &Vec<Value>) -> impl StorageFuture<ChangeResult>;
-    fn delete(&mut self, key: &Key) -> impl StorageFuture<ChangeResult>;
-    fn delete_many(&mut self, keys: &Vec<Key>) -> impl StorageFuture<ChangeResult>;
+    fn update(&mut self, value: &Value) -> impl Future<ChangeResult>;
+    fn update_many(&mut self, values: &Vec<Value>) -> impl Future<ChangeResult>;
+    fn delete(&mut self, key: &Key) -> impl Future<ChangeResult>;
+    fn delete_many(&mut self, keys: &Vec<Key>) -> impl Future<ChangeResult>;
     fn handle_query(
         &mut self,
         query: QueryType<Key, Value>,
@@ -49,31 +47,43 @@ where
         };
         ImmediateValuePromise::new(async move { Ok(query_future.await) })
     }
-    fn get_by_id(&mut self, key: Key) -> impl StorageFuture<QueryResponse<Key, Value>>;
+    fn get_by_id(&mut self, key: Key) -> impl Future<QueryResponse<Key, Value>>;
     // TODO: this function could technically have a default implementation
     // where it just uses the predicate function to do a search
-    fn get_by_ids(&mut self, keys: Vec<Key>) -> impl StorageFuture<QueryResponse<Key, Value>>;
+    fn get_by_ids(&mut self, keys: Vec<Key>) -> impl Future<QueryResponse<Key, Value>>;
     fn get_by_predicate(
         &mut self,
         predicate: Predicate<Value>,
-    ) -> impl StorageFuture<QueryResponse<Key, Value>>;
+    ) -> impl Future<QueryResponse<Key, Value>>;
 }
 
-pub trait StorageFuture<FutureOutput>
+pub trait InitFuture<FutOutput>
 where
-    Self: Future<Output = FutureOutput> + Send + Sync + 'static,
+    Self: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
+    FutOutput: Send + Sync + ?Sized,
+{}
+
+impl<T, FutOutput> InitFuture<FutOutput> for T 
+where
+    T: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
+    FutOutput: Send + Sync + ?Sized,
+{}
+
+pub trait Future<FutureOutput>
+where
+    Self: std::future::Future<Output = FutureOutput> + Send + Sync + 'static,
     FutureOutput: Clone + Send + Sync,
 {
 }
 
-impl<T, FutOutput> StorageFuture<FutOutput> for T
+impl<T, FutOutput> Future<FutOutput> for T
 where
-    T: Future<Output = FutOutput> + Send + Sync + 'static,
+    T: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
     FutOutput: Clone + Send + Sync,
 {
 }
 
-fn to_boxed<FutOutput>(fut: impl StorageFuture<FutOutput>) -> BoxFuture<'static, FutOutput>
+fn to_boxed<FutOutput>(fut: impl Future<FutOutput>) -> BoxFuture<'static, FutOutput>
 where
     FutOutput: Clone + Send + Sync + 'static,
 {

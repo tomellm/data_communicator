@@ -1,6 +1,6 @@
 //! hello
 
-use futures::{future::BoxFuture, Future};
+use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
 
 use super::changer::{self, ActionType, Response};
@@ -9,21 +9,21 @@ pub trait GetKey<Key> {
     fn get_key(&self) -> Key;
 }
 
-pub trait StorageFuture<FutOutput>
+pub trait Future<FutOutput>
 where
-    Self: Future<Output = FutOutput> + Send + Sync + 'static,
+    Self: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
     FutOutput: Clone + Send + Sync,
 {
 }
 
-impl<T, FutOutput> StorageFuture<FutOutput> for T
+impl<T, FutOutput> Future<FutOutput> for T
 where
-    T: Future<Output = FutOutput> + Send + Sync + 'static,
+    T: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
     FutOutput: Clone + Send + Sync,
 {
 }
 
-fn to_boxed<FutOutput>(fut: impl StorageFuture<FutOutput>) -> BoxFuture<'static, FutOutput>
+fn to_boxed<FutOutput>(fut: impl Future<FutOutput>) -> BoxFuture<'static, FutOutput>
 where
     FutOutput: Clone + Send + Sync + 'static,
 {
@@ -57,17 +57,17 @@ where
             Ok(response)
         })
     }
-    fn set(&mut self, value: Value) -> impl StorageFuture<Response<Key, Value>>;
-    fn set_many(&mut self, values: Vec<Value>) -> impl StorageFuture<Response<Key, Value>>;
-    fn update(&mut self, value: Value) -> impl StorageFuture<Response<Key, Value>>;
-    fn update_many(&mut self, values: Vec<Value>) -> impl StorageFuture<Response<Key, Value>>;
-    fn delete(&mut self, key: Key) -> impl StorageFuture<Response<Key, Value>>;
-    fn delete_many(&mut self, keys: Vec<Key>) -> impl StorageFuture<Response<Key, Value>>;
-    fn get_all(&mut self) -> impl StorageFuture<Response<Key, Value>>;
+    fn set(&mut self, value: Value) -> impl Future<Response<Key, Value>>;
+    fn set_many(&mut self, values: Vec<Value>) -> impl Future<Response<Key, Value>>;
+    fn update(&mut self, value: Value) -> impl Future<Response<Key, Value>>;
+    fn update_many(&mut self, values: Vec<Value>) -> impl Future<Response<Key, Value>>;
+    fn delete(&mut self, key: Key) -> impl Future<Response<Key, Value>>;
+    fn delete_many(&mut self, keys: Vec<Key>) -> impl Future<Response<Key, Value>>;
+    fn get_all(&mut self) -> impl Future<Response<Key, Value>>;
     fn setup<SetupState>(
         &mut self,
         state: SetupState,
-    ) -> impl StorageFuture<Result<Vec<Value>, ()>>;
+    ) -> impl Future<Result<Vec<Value>, ()>>;
 }
 
 #[cfg(test)]
@@ -98,17 +98,17 @@ mod tests {
         fn setup<SomeState>(
             &mut self,
             _state: SomeState,
-        ) -> impl StorageFuture<Result<Vec<String>, ()>> {
+        ) -> impl Future<Result<Vec<String>, ()>> {
             async move { Ok(vec![]) as Result<Vec<String>, ()> }
         }
-        fn set(&mut self, value: String) -> impl StorageFuture<Response<char, String>> {
+        fn set(&mut self, value: String) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 map.lock().await.insert(value.get_key(), value.clone());
                 Response::ok(&ActionType::Set(value))
             }
         }
-        fn set_many(&mut self, values: Vec<String>) -> impl StorageFuture<Response<char, String>> {
+        fn set_many(&mut self, values: Vec<String>) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 let mut guard = map.lock().await;
@@ -118,7 +118,7 @@ mod tests {
                 Response::ok(&ActionType::SetMany(values))
             }
         }
-        fn update(&mut self, value: String) -> impl StorageFuture<Response<char, String>> {
+        fn update(&mut self, value: String) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 map.lock().await.insert(value.get_key(), value.clone());
@@ -128,7 +128,7 @@ mod tests {
         fn update_many(
             &mut self,
             values: Vec<String>,
-        ) -> impl StorageFuture<Response<char, String>> {
+        ) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 let mut guard = map.lock().await;
@@ -138,14 +138,14 @@ mod tests {
                 Response::ok(&ActionType::UpdateMany(values))
             }
         }
-        fn delete(&mut self, key: char) -> impl StorageFuture<Response<char, String>> {
+        fn delete(&mut self, key: char) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 map.lock().await.remove(&key);
                 Response::ok(&ActionType::Delete(key))
             }
         }
-        fn delete_many(&mut self, keys: Vec<char>) -> impl StorageFuture<Response<char, String>> {
+        fn delete_many(&mut self, keys: Vec<char>) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 let mut guard = map.lock().await;
@@ -155,7 +155,7 @@ mod tests {
                 Response::ok(&ActionType::DeleteMany(keys))
             }
         }
-        fn get_all(&mut self) -> impl StorageFuture<Response<char, String>> {
+        fn get_all(&mut self) -> impl Future<Response<char, String>> {
             let map = self.map.clone();
             async move {
                 let vals = map

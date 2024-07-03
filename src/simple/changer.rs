@@ -2,7 +2,8 @@ use std::fmt::Debug;
 
 use tokio::sync::{mpsc, watch};
 
-use crate::storage::GetKey;
+use super::storage::GetKey;
+
 
 pub struct Action<Key, Value>
 where
@@ -18,6 +19,7 @@ where
     Key: Clone + Send + Sync,
     Value: GetKey<Key> + Clone + Send + Sync,
 {
+    #[must_use]
     pub fn set(value: Value, responder: watch::Sender<Response<Key, Value>>) -> Self {
         let action_type = ActionType::Set(value);
         Self {
@@ -25,6 +27,7 @@ where
             responder,
         }
     }
+    #[must_use]
     pub fn set_many(values: Vec<Value>, responder: watch::Sender<Response<Key, Value>>) -> Self {
         let action_type = ActionType::SetMany(values);
         Self {
@@ -32,30 +35,35 @@ where
             responder,
         }
     }
+    #[must_use]
     pub fn update(value: Value, responder: watch::Sender<Response<Key, Value>>) -> Self {
         Self {
             action_type: ActionType::Update(value),
             responder,
         }
     }
+    #[must_use]
     pub fn update_many(values: Vec<Value>, responder: watch::Sender<Response<Key, Value>>) -> Self {
         Self {
             action_type: ActionType::UpdateMany(values),
             responder,
         }
     }
+    #[must_use]
     pub fn delete(key: Key, responder: watch::Sender<Response<Key, Value>>) -> Self {
         Self {
             action_type: ActionType::Delete(key),
             responder,
         }
     }
+    #[must_use]
     pub fn delete_many(keys: Vec<Key>, responder: watch::Sender<Response<Key, Value>>) -> Self {
         Self {
             action_type: ActionType::DeleteMany(keys),
             responder,
         }
     }
+    #[must_use]
     pub fn getall(responder: watch::Sender<Response<Key, Value>>) -> Self {
         Self {
             action_type: ActionType::GetAll(vec![]),
@@ -65,6 +73,10 @@ where
     pub fn action(&self) -> &ActionType<Key, Value> {
         &self.action_type
     }
+    /// # Errors
+    ///
+    /// Will error if the `tokio::sync::watch::Sender` fails to send the value
+    /// to the container.
     pub fn respond(
         &self,
         response: Response<Key, Value>,

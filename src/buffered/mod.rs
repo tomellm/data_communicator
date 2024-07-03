@@ -45,18 +45,18 @@ impl<Value, Error> BlankOutError<Value, Error> for Result<Value, Error> {
 }
 
 mod test {
+    #![allow(dead_code)]
 
-    use std::{collections::HashMap, sync::Arc, thread, time::Duration};
+    use std::{collections::HashMap, sync::Arc};
 
-    use lazy_async_promise::ImmediateValueState;
     use tokio::sync::{Mutex, MutexGuard};
+    #[allow(unused_imports)]
     use tracing::Level;
     use uuid::Uuid;
 
     use super::{
         container::DataContainer,
         test_impl::test::{Item, TestStruct},
-        utils::PromiseUtils,
     };
 
     async fn setup_container() -> (
@@ -93,7 +93,6 @@ mod test {
         println!("map was empty");
 
         let _promise = communicator_one.update(new_item.clone());
-        thread::sleep(Duration::from_secs(1));
 
         communicator_one.state_update();
         container.state_update();

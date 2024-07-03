@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use lazy_async_promise::{DirectCacheAccess, ImmediateValuePromise, ImmediateValueState};
+use lazy_async_promise::{DirectCacheAccess, ImmediateValuePromise};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{event, Level};
 use uuid::Uuid;

@@ -11,7 +11,7 @@ pub mod test {
     use super::super::{
         change::ChangeResult,
         query::{QueryError, QueryResponse},
-        storage::{Storage, StorageFuture},
+        storage::{Storage, Future},
         GetKey,
     };
 
@@ -45,7 +45,7 @@ pub mod test {
         async fn init(args: Self::InitArgs) -> Self {
             TestStruct { map: args }
         }
-        fn update_many(&mut self, values: &Vec<Item>) -> impl StorageFuture<ChangeResult> {
+        fn update_many(&mut self, values: &Vec<Item>) -> impl Future<ChangeResult> {
             let tuples = values.clone().into_iter().map(|i| (i.key().clone(), i));
             let map = self.map.clone();
             async move {
@@ -53,7 +53,7 @@ pub mod test {
                 ChangeResult::Success
             }
         }
-        fn delete(&mut self, key: &Uuid) -> impl StorageFuture<ChangeResult> {
+        fn delete(&mut self, key: &Uuid) -> impl Future<ChangeResult> {
             let map = self.map.clone();
             let key = key.clone();
             async move {
@@ -61,7 +61,7 @@ pub mod test {
                 ChangeResult::Success
             }
         }
-        fn delete_many(&mut self, keys: &Vec<Uuid>) -> impl StorageFuture<ChangeResult> {
+        fn delete_many(&mut self, keys: &Vec<Uuid>) -> impl Future<ChangeResult> {
             let map = self.map.clone();
             let keys = keys.clone();
             async move {
@@ -69,7 +69,7 @@ pub mod test {
                 ChangeResult::Success
             }
         }
-        fn update(&mut self, value: &Item) -> impl StorageFuture<ChangeResult> {
+        fn update(&mut self, value: &Item) -> impl Future<ChangeResult> {
             let map = self.map.clone();
             let item = value.clone();
             async move {
@@ -77,7 +77,7 @@ pub mod test {
                 ChangeResult::Success
             }
         }
-        fn get_by_id(&mut self, key: Uuid) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
+        fn get_by_id(&mut self, key: Uuid) -> impl Future<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
             async move {
                 map.lock()
@@ -87,7 +87,7 @@ pub mod test {
                     .unwrap_or(QueryResponse::Err(QueryError::NotPresent))
             }
         }
-        fn get_by_ids(&mut self, keys: Vec<Uuid>) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
+        fn get_by_ids(&mut self, keys: Vec<Uuid>) -> impl Future<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
             async move {
                 QueryResponse::Ok(
@@ -104,7 +104,7 @@ pub mod test {
         fn get_by_predicate(
             &mut self,
             predicate: Predicate<Item>,
-        ) -> impl StorageFuture<QueryResponse<Uuid, Item>> {
+        ) -> impl Future<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
             async move {
                 QueryResponse::Ok(
