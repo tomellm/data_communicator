@@ -1,34 +1,115 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
-use super::{actions::ActionType, KeyBounds, ValueBounds};
+use super::{change::ChangeType, KeyBounds, ValueBounds};
 
 pub struct Data<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
-    pub data: HashMap<Key, Value>
+    data: HashMap<Key, Value>,
+}
+
+impl<Key, Value> Data<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn new() -> Self {
+        Self { data: HashMap::new() }
+    }
+    
+    pub fn update_with_fresh(&mut self, fresh_data: FreshData<Key, Value>) {
+        self.data.extend(HashMap::from(fresh_data))
+    }
 }
 
 #[derive(Clone)]
-pub enum DataUpdate<Key, Value>
+pub struct FreshData<Key, Value>(HashMap<Key, Value>);
+
+impl<Key, Value> Deref for FreshData<Key, Value> {
+    type Target = HashMap<Key, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Key, Value> DerefMut for FreshData<Key, Value> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<Key, Value> From<Value> for FreshData<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
+{
+    fn from(value: Value) -> Self {
+        let mut map = HashMap::new();
+        map.insert(value.key().clone(), value);
+        FreshData(map)
+    }
+}
+
+impl<Key, Value> From<Vec<Value>> for FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: Vec<Value>) -> Self {
+        FreshData(
+            value
+                .into_iter()
+                .map(|item| (item.key().clone(), item))
+                .collect(),
+        )
+    }
+}
+
+impl<Key, Value> From<HashMap<Key, Value>> for FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: HashMap<Key, Value>) -> Self {
+        Self(value)
+    }
+}
+
+impl<Key, Value> From<FreshData<Key, Value>> for HashMap<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: FreshData<Key, Value>) -> Self {
+        value.0
+    }
+    
+}
+
+#[derive(Clone)]
+pub enum DataChange<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
 {
     Update(Vec<Value>),
     Delete(Vec<Key>),
 }
 
-impl<Key, Value> DataUpdate<Key, Value>
+impl<Key, Value> DataChange<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     pub fn value_keys(&self) -> Vec<&Key> {
         match self {
             Self::Update(values) => values.iter().map(Value::key).collect::<Vec<_>>(),
-            Self::Delete(keys) => keys.iter().map(|v|v).collect::<Vec<_>>(),
+            Self::Delete(keys) => keys.iter().map(|v| v).collect::<Vec<_>>(),
         }
     }
 
@@ -37,7 +118,7 @@ where
     pub fn update_data(self, data: &mut Data<Key, Value>) {
         match self {
             Self::Update(values) => Self::update(values, data),
-            Self::Delete(keys) => Self::delete(keys, data)
+            Self::Delete(keys) => Self::delete(keys, data),
         }
     }
 
@@ -53,17 +134,17 @@ where
     }
 }
 
-impl<Key, Value> From<ActionType<Key, Value>> for DataUpdate<Key, Value>
+impl<Key, Value> From<ChangeType<Key, Value>> for DataChange<Key, Value>
 where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
-    fn from(value: ActionType<Key, Value>) -> Self {
+    fn from(value: ChangeType<Key, Value>) -> Self {
         match value {
-            ActionType::Update(val) => Self::Update(vec![val]),
-            ActionType::UpdateMany(vals) => Self::Update(vals),
-            ActionType::Delete(key) => Self::Delete(vec![key]),
-            ActionType::DeleteMany(keys) => Self::Delete(keys),
+            ChangeType::Update(val) => Self::Update(vec![val]),
+            ChangeType::UpdateMany(vals) => Self::Update(vals),
+            ChangeType::Delete(key) => Self::Delete(vec![key]),
+            ChangeType::DeleteMany(keys) => Self::Delete(keys),
         }
     }
 }

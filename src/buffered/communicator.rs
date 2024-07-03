@@ -1,10 +1,12 @@
-
 use lazy_async_promise::ImmediateValuePromise;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::{
-    actions::{Action, ActionType}, data::{Data, DataUpdate}, responses::{ActionError, ActionResult}, KeyBounds, ValueBounds
+    change::{Change, ChangeError, ChangeResult, ChangeType},
+    data::{Data, DataChange, FreshData},
+    query::{DataQuery, QueryError, QueryResult, QueryType},
+    KeyBounds, ValueBounds,
 };
 
 pub struct Communicator<Key: KeyBounds, Value: ValueBounds<Key>> {
@@ -14,56 +16,166 @@ pub struct Communicator<Key: KeyBounds, Value: ValueBounds<Key>> {
     pub data: Data<Key, Value>,
 }
 
-impl<Key: KeyBounds, Value: ValueBounds<Key>> Communicator<Key, Value> {
+impl<Key, Value> Communicator<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn new(
+        uuid: Uuid,
+        change_sender: mpsc::Sender<Change<Key, Value>>,
+        query_sender: mpsc::Sender<DataQuery<Key, Value>>,
+        change_data_reciver: mpsc::Receiver<DataChange<Key, Value>>,
+        fresh_data_reciver: mpsc::Receiver<FreshData<Key, Value>>,
+    ) -> Self {
+        let sender = Sender::new(change_sender, query_sender);
+        let reciver = Reciver::new(change_data_reciver, fresh_data_reciver);
+        Self { uuid, sender, reciver, data: Data::new() }
+    }
     /// Recives any new updates and then updates the internal data accordingly
     pub fn state_update(&mut self) {
-        self.reciver.recive_new().into_iter()
-            .for_each(|update| update.update_data(&mut self.data));
+        self.reciver
+            .recive_new()
+            .into_iter()
+            .for_each(|action| match action {
+                RecievedAction::Change(update) => update.update_data(&mut self.data),
+                RecievedAction::Fresh(data) => self.data.update_with_fresh(data),
+            });
+    }
+    pub fn query(&self, query_type: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResult> {
+        self.sender.send_query(self.uuid, query_type)
     }
     /// Sends out an action to update a single element
-    pub fn update(&self, val: Value) -> ImmediateValuePromise<ActionResult> {
-        self.sender.send(ActionType::Update(val))
+    pub fn update(&self, val: Value) -> ImmediateValuePromise<ChangeResult> {
+        self.sender.send_change(ChangeType::Update(val))
     }
     /// Sends out an action to delete a single element
-    pub fn delete(&self, key: Key) -> ImmediateValuePromise<ActionResult> {
-        self.sender.send(ActionType::Delete(key))
+    pub fn delete(&self, key: Key) -> ImmediateValuePromise<ChangeResult> {
+        self.sender.send_change(ChangeType::Delete(key))
     }
 }
 
-pub struct Sender<Key: KeyBounds, Value: ValueBounds<Key>> {
-    pub sender: mpsc::Sender<Action<Key, Value>>,
+pub struct Sender<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    change_sender: mpsc::Sender<Change<Key, Value>>,
+    query_sender: mpsc::Sender<DataQuery<Key, Value>>,
 }
 
-impl<Key: KeyBounds, Value: ValueBounds<Key>> Sender<Key, Value> {
+impl<Key, Value> Sender<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn new(
+        change_sender: mpsc::Sender<Change<Key, Value>>,
+        query_sender: mpsc::Sender<DataQuery<Key, Value>>,
+    ) -> Self {
+        Self {
+            change_sender,
+            query_sender,
+        }
+    }
+
     /// Returns a ImmediateValuePromise that will resolve to the result of the
     /// action but not to the actual data. The Data will be automatically updated
     /// if the result is a success
-    pub fn send(&self, action_type: ActionType<Key, Value>) -> ImmediateValuePromise<ActionResult> {
-        let new_sender = self.sender.clone();
+    pub fn send_change(
+        &self,
+        action_type: ChangeType<Key, Value>,
+    ) -> ImmediateValuePromise<ChangeResult> {
+        let new_sender = self.change_sender.clone();
         ImmediateValuePromise::new(async move {
-            let (action, reciver) = Action::from_type(action_type);
+            let (action, reciver) = Change::from_type(action_type);
+            dbg!("about to send change");
             let response = match new_sender.send(action).await {
-                Ok(_) => ActionResult::from(reciver.await),
-                Err(err) => ActionResult::Error(ActionError::send_err(err)),
+                Ok(_) => reciver.await.into(),
+                Err(err) => ChangeResult::Error(ChangeError::send_err(err)),
+            };
+            Ok(response)
+        })
+    }
+
+    pub fn send_query(
+        &self,
+        origin_uuid: Uuid,
+        query_type: QueryType<Key, Value>,
+    ) -> ImmediateValuePromise<QueryResult> {
+        let new_sender = self.query_sender.clone();
+        ImmediateValuePromise::new(async move {
+            let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
+            let response = match new_sender.send(query).await {
+                Ok(_) => reciver.await.into(),
+                Err(err) => QueryResult::Error(QueryError::send_err(err)),
             };
             Ok(response)
         })
     }
 }
 
-pub struct Reciver<Key: KeyBounds, Value: ValueBounds<Key>> {
-    pub reciver: mpsc::Receiver<DataUpdate<Key, Value>>,
+pub struct Reciver<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    change_reciver: mpsc::Receiver<DataChange<Key, Value>>,
+    fresh_data_reciver: mpsc::Receiver<FreshData<Key, Value>>,
 }
 
-impl<Key: KeyBounds, Value: ValueBounds<Key>> Reciver<Key, Value> {
+impl<Key, Value> Reciver<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn new(
+        change_reciver: mpsc::Receiver<DataChange<Key, Value>>,
+        fresh_data_reciver: mpsc::Receiver<FreshData<Key, Value>>,
+    ) -> Self {
+        Self {
+            change_reciver,
+            fresh_data_reciver,
+        }
+    }
     /// Tries to recive all new Updates
-    fn recive_new(&mut self) -> Vec<DataUpdate<Key, Value>> {
-        let mut new_updates = vec![];
-        while let Ok(val) = self.reciver.try_recv() {
-            new_updates.push(val);
+    fn recive_new(&mut self) -> Vec<RecievedAction<Key, Value>> {
+        let mut new_updates: Vec<RecievedAction<Key, Value>> = vec![];
+        while let Ok(val) = self.change_reciver.try_recv() {
+            new_updates.push(val.into());
+        }
+        while let Ok(val) = self.fresh_data_reciver.try_recv() {
+            new_updates.push(val.into())
         }
         new_updates
     }
 }
 
+enum RecievedAction<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    Change(DataChange<Key, Value>),
+    Fresh(FreshData<Key, Value>),
+}
 
+impl<Key, Value> From<DataChange<Key, Value>> for RecievedAction<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: DataChange<Key, Value>) -> Self {
+        Self::Change(value)
+    }
+}
+
+impl<Key, Value> From<FreshData<Key, Value>> for RecievedAction<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: FreshData<Key, Value>) -> Self {
+        Self::Fresh(value)
+    }
+}

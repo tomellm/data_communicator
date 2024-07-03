@@ -3,10 +3,9 @@ use std::future::Future;
 use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
 
-use crate::buffered::actions::ActionType;
 
 use super::{
-    responses::{ActionResponse, ActionResult}, KeyBounds, ValueBounds
+    change::{ChangeResponse, ChangeResult, ChangeType}, query::{Predicate, QueryResponse, QueryType}, KeyBounds, ValueBounds
 };
 
 pub trait Storage<Key: KeyBounds, Value: ValueBounds<Key>>
@@ -15,27 +14,43 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
-    async fn init<T>(args: T) -> Self;
-    fn handle_action(
+    type InitArgs;
+    fn init(args: Self::InitArgs) -> impl std::future::Future<Output = Self> + Send;
+    fn handle_change(
         &mut self,
-        action: ActionType<Key, Value>
-    ) -> ImmediateValuePromise<ActionResponse<Key, Value>> {
+        action: ChangeType<Key, Value>,
+    ) -> ImmediateValuePromise<ChangeResponse<Key, Value>> {
         let action_future = match &action {
-            ActionType::Update(value) => to_boxed(self.update(value)),
-            ActionType::UpdateMany(values) => to_boxed(self.update_many(values)),
-            ActionType::Delete(key) => to_boxed(self.delete(key)),
-            ActionType::DeleteMany(values) => to_boxed(self.delete_many(values)),
+            ChangeType::Update(value) => to_boxed(self.update(value)),
+            ChangeType::UpdateMany(values) => to_boxed(self.update_many(values)),
+            ChangeType::Delete(key) => to_boxed(self.delete(key)),
+            ChangeType::DeleteMany(values) => to_boxed(self.delete_many(values)),
         };
         ImmediateValuePromise::new(async move {
-            let action_result = action_future.await;
-            Ok(ActionResponse::from_type_and_result(action, action_result))
+            Ok(ChangeResponse::from_type_and_result(action, action_future.await))
         })
     }
-    fn update(&mut self, value: &Value) -> impl StorageFuture<ActionResult>;
-    fn update_many(&mut self, values: &Vec<Value>) -> impl StorageFuture<ActionResult>;
-    fn delete(&mut self, key: &Key) -> impl StorageFuture<ActionResult>;
-    fn delete_many(&mut self, keys: &Vec<Key>) -> impl StorageFuture<ActionResult>;
+    fn update(&mut self, value: &Value) -> impl StorageFuture<ChangeResult>;
+    fn update_many(&mut self, values: &Vec<Value>) -> impl StorageFuture<ChangeResult>;
+    fn delete(&mut self, key: &Key) -> impl StorageFuture<ChangeResult>;
+    fn delete_many(&mut self, keys: &Vec<Key>) -> impl StorageFuture<ChangeResult>;
+    fn handle_query(&mut self, query: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResponse<Key, Value>> {
+        let query_future = match query {
+            QueryType::GetById(id) => to_boxed(self.get_by_id(id)),
+            QueryType::GetByIds(ids) => to_boxed(self.get_by_ids(ids)),
+            QueryType::Predicate(pred) => to_boxed(self.get_by_predicate(pred)),
+        };
+        ImmediateValuePromise::new(async move{
+            Ok(query_future.await)
+        })
+    }
+    fn get_by_id(&mut self, key: Key) -> impl StorageFuture<QueryResponse<Key, Value>>;
+    // TODO: this function could technically have a default implementation
+    // where it just uses the predicate function to do a search
+    fn get_by_ids(&mut self, keys: Vec<Key>) -> impl StorageFuture<QueryResponse<Key, Value>>;
+    fn get_by_predicate(&mut self, predicate: Predicate<Value>) -> impl StorageFuture<QueryResponse<Key, Value>>;
 }
+
 
 pub trait StorageFuture<FutureOutput>
 where
