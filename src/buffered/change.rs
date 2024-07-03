@@ -31,9 +31,9 @@ impl<Key: KeyBounds, Value: ValueBounds<Key>> Change<Key, Value> {
     pub fn all_keys(&self) -> Vec<&Key> {
         match &self.action {
             ChangeType::Update(val) => vec![val.key()],
-            ChangeType::UpdateMany(vals) => vals.iter().map(|v| v.key()).collect(),
+            ChangeType::UpdateMany(vals) => vals.iter().map(super::GetKey::key).collect(),
             ChangeType::Delete(key) => vec![key],
-            ChangeType::DeleteMany(keys) => keys.into_iter().collect(),
+            ChangeType::DeleteMany(keys) => keys.iter().collect(),
         }
     }
 }
@@ -89,14 +89,14 @@ pub enum ChangeError {
 }
 
 impl ChangeError {
-    pub fn send_err<T>(send_err: mpsc::error::SendError<T>) -> Self {
+    pub fn send_err<T>(send_err: &mpsc::error::SendError<T>) -> Self {
         Self::ChannelSendError(format!("{send_err}"))
     }
 }
 
 impl Display for ChangeError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "{:?}", self)
+        write!(fmt, "{self:?}")
     }
 }
 

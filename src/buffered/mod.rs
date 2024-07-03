@@ -56,16 +56,16 @@ mod test {
 
     use super::{
         container::DataContainer,
-        test_impl::test::{Item, TestStruct},
+        test_impl::test::{Item, ExampleStorage},
     };
 
     async fn setup_container() -> (
-        DataContainer<Uuid, Item, TestStruct>,
+        DataContainer<Uuid, Item, ExampleStorage>,
         Arc<Mutex<HashMap<Uuid, Item>>>,
     ) {
         let map = Arc::new(Mutex::new(HashMap::new()));
         (
-            DataContainer::<Uuid, Item, TestStruct>::new(map.clone()).await,
+            DataContainer::<Uuid, Item, ExampleStorage>::new(map.clone()).await,
             map,
         )
     }

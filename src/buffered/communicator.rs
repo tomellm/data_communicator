@@ -21,6 +21,7 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    #[must_use]
     pub fn new(
         uuid: Uuid,
         change_sender: mpsc::Sender<Change<Key, Value>>,
@@ -74,6 +75,7 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    #[must_use]
     pub fn new(
         change_sender: mpsc::Sender<Change<Key, Value>>,
         query_sender: mpsc::Sender<DataQuery<Key, Value>>,
@@ -84,7 +86,7 @@ where
         }
     }
 
-    /// Returns a ImmediateValuePromise that will resolve to the result of the
+    /// Returns a `ImmediateValuePromise` that will resolve to the result of the
     /// action but not to the actual data. The Data will be automatically updated
     /// if the result is a success
     pub fn send_change(
@@ -96,8 +98,8 @@ where
             let (action, reciver) = Change::from_type(action_type);
             dbg!("about to send change");
             let response = match new_sender.send(action).await {
-                Ok(_) => reciver.await.into(),
-                Err(err) => ChangeResult::Error(ChangeError::send_err(err)),
+                Ok(()) => reciver.await.into(),
+                Err(err) => ChangeResult::Error(ChangeError::send_err(&err)),
             };
             Ok(response)
         })
@@ -112,8 +114,8 @@ where
         ImmediateValuePromise::new(async move {
             let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
             let response = match new_sender.send(query).await {
-                Ok(_) => reciver.await.into(),
-                Err(err) => QueryResult::Error(QueryError::send_err(err)),
+                Ok(()) => reciver.await.into(),
+                Err(err) => QueryResult::Error(QueryError::send_err(&err)),
             };
             Ok(response)
         })
@@ -134,6 +136,7 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    #[must_use]
     pub fn new(
         change_reciver: mpsc::Receiver<DataChange<Key, Value>>,
         fresh_data_reciver: mpsc::Receiver<FreshData<Key, Value>>,
@@ -144,13 +147,14 @@ where
         }
     }
     /// Tries to recive all new Updates
+    #[must_use]
     fn recive_new(&mut self) -> Vec<RecievedAction<Key, Value>> {
         let mut new_updates: Vec<RecievedAction<Key, Value>> = vec![];
         while let Ok(val) = self.change_reciver.try_recv() {
             new_updates.push(val.into());
         }
         while let Ok(val) = self.fresh_data_reciver.try_recv() {
-            new_updates.push(val.into())
+            new_updates.push(val.into());
         }
         new_updates
     }

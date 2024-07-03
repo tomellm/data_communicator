@@ -18,6 +18,7 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
@@ -25,7 +26,17 @@ where
     }
 
     pub fn update_with_fresh(&mut self, fresh_data: FreshData<Key, Value>) {
-        self.data.extend(HashMap::from(fresh_data))
+        self.data.extend(HashMap::from(fresh_data));
+    }
+}
+
+impl<Key, Value> Default for Data<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+ {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -82,6 +93,7 @@ where
     }
 }
 
+#[allow(clippy::implicit_hasher)]
 impl<Key, Value> From<FreshData<Key, Value>> for HashMap<Key, Value>
 where
     Key: KeyBounds,
@@ -110,7 +122,7 @@ where
     pub fn value_keys(&self) -> Vec<&Key> {
         match self {
             Self::Update(values) => values.iter().map(Value::key).collect::<Vec<_>>(),
-            Self::Delete(keys) => keys.iter().map(|v| v).collect::<Vec<_>>(),
+            Self::Delete(keys) => keys.iter().collect::<Vec<_>>(),
         }
     }
 
@@ -124,14 +136,14 @@ where
     }
 
     fn update(values: Vec<Value>, data: &mut Data<Key, Value>) {
-        values.into_iter().for_each(|value| {
+        for value in values {
             data.data.insert(value.key().clone(), value);
-        });
+        }
     }
     fn delete(keys: Vec<Key>, data: &mut Data<Key, Value>) {
-        keys.into_iter().for_each(|key| {
+        for key in keys {
             data.data.remove(&key);
-        });
+        }
     }
 }
 

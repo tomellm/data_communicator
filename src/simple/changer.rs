@@ -164,6 +164,7 @@ where
                 Err(_) => false,
             });
     }
+    #[must_use]
     pub fn new(sender: mpsc::Sender<Action<Key, Value>>) -> Self {
         Self {
             sender,

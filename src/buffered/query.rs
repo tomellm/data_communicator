@@ -92,14 +92,14 @@ pub enum QueryError {
 }
 
 impl QueryError {
-    pub fn send_err<T>(send_err: mpsc::error::SendError<T>) -> Self {
+    pub fn send_err<T>(send_err: &mpsc::error::SendError<T>) -> Self {
         Self::ChannelSend(format!("{send_err}"))
     }
 }
 
 impl Display for QueryError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "{:?}", self)
+        write!(fmt, "{self:?}")
     }
 }
 impl Error for QueryError {}

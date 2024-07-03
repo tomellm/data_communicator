@@ -1,8 +1,9 @@
 pub mod test {
-    #[allow(private_interfaces)]
+    #![allow(private_interfaces)]
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    use itertools::Itertools;
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
@@ -11,7 +12,7 @@ pub mod test {
     use super::super::{
         change::ChangeResult,
         query::{QueryError, QueryResponse},
-        storage::{Storage, Future},
+        storage::{Future, Storage},
         GetKey,
     };
 
@@ -22,6 +23,7 @@ pub mod test {
     }
 
     impl Item {
+        #[must_use]
         pub fn new(val: &str) -> Self {
             Self {
                 uuid: Uuid::new_v4(),
@@ -36,17 +38,17 @@ pub mod test {
         }
     }
 
-    pub struct TestStruct {
+    pub struct ExampleStorage {
         pub map: Arc<Mutex<HashMap<Uuid, Item>>>,
     }
 
-    impl Storage<Uuid, Item> for TestStruct {
+    impl Storage<Uuid, Item> for ExampleStorage {
         type InitArgs = Arc<Mutex<HashMap<Uuid, Item>>>;
         async fn init(args: Self::InitArgs) -> Self {
-            TestStruct { map: args }
+            ExampleStorage { map: args }
         }
-        fn update_many(&mut self, values: &Vec<Item>) -> impl Future<ChangeResult> {
-            let tuples = values.clone().into_iter().map(|i| (i.key().clone(), i));
+        fn update_many(&mut self, values: &[Item]) -> impl Future<ChangeResult> {
+            let tuples = values.iter().cloned().map(|i| (*i.key(), i)).collect_vec();
             let map = self.map.clone();
             async move {
                 map.lock().await.extend(tuples);
@@ -55,15 +57,15 @@ pub mod test {
         }
         fn delete(&mut self, key: &Uuid) -> impl Future<ChangeResult> {
             let map = self.map.clone();
-            let key = key.clone();
+            let key = *key;
             async move {
                 map.lock().await.remove(&key);
                 ChangeResult::Success
             }
         }
-        fn delete_many(&mut self, keys: &Vec<Uuid>) -> impl Future<ChangeResult> {
+        fn delete_many(&mut self, keys: &[Uuid]) -> impl Future<ChangeResult> {
             let map = self.map.clone();
-            let keys = keys.clone();
+            let keys = keys.to_vec();
             async move {
                 let _ = map.lock().await.extract_if(|key, _| keys.contains(key));
                 ChangeResult::Success
@@ -73,7 +75,7 @@ pub mod test {
             let map = self.map.clone();
             let item = value.clone();
             async move {
-                map.lock().await.insert(item.key().clone(), item);
+                map.lock().await.insert(*item.key(), item);
                 ChangeResult::Success
             }
         }
@@ -83,8 +85,9 @@ pub mod test {
                 map.lock()
                     .await
                     .get(&key)
-                    .map(|item| QueryResponse::Ok(item.clone().into()))
-                    .unwrap_or(QueryResponse::Err(QueryError::NotPresent))
+                    .map_or(QueryResponse::Err(QueryError::NotPresent), |item| {
+                        QueryResponse::Ok(item.clone().into())
+                    })
             }
         }
         fn get_by_ids(&mut self, keys: Vec<Uuid>) -> impl Future<QueryResponse<Uuid, Item>> {
@@ -95,7 +98,7 @@ pub mod test {
                         .await
                         .iter()
                         .filter(|(k, _)| keys.contains(k))
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .map(|(k, v)| (*k, v.clone()))
                         .collect::<HashMap<_, _>>()
                         .into(),
                 )
@@ -112,7 +115,7 @@ pub mod test {
                         .await
                         .iter()
                         .filter(|(_, v)| predicate(v))
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .map(|(k, v)| (*k, v.clone()))
                         .collect::<HashMap<_, _>>()
                         .into(),
                 )

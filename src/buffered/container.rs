@@ -12,7 +12,7 @@ use super::{
     data::{DataChange, FreshData},
     query::{DataQuery, QueryResponse, QueryResult},
     storage::Storage,
-    utils::PromiseUtils,
+    utils::PromiseUtilities,
     KeyBounds, ValueBounds,
 };
 
@@ -48,13 +48,13 @@ where
 
     /// For the state a number of things need to be done:
     /// - Will collect any new actions sent by any of the Communicators and pass
-    /// them to the Storage to be processed. The ImmediateValuePromises created
-    /// by the storage will then
+    ///   them to the Storage to be processed. The `ImmediateValuePromises` created
+    ///   by the storage will then
     pub fn state_update(&mut self) {
         self.resolve_finished_actions()
             .into_iter()
             .for_each(|action| match action {
-                ResolvedAction::Change(change) => self.update_communicators(change),
+                ResolvedAction::Change(change) => self.update_communicators(&change),
                 ResolvedAction::Query(query, uuid) => self.return_query(uuid, query),
             });
         self.recive_new_actions();
@@ -76,28 +76,26 @@ where
         self.update_sender
             .register_senders(&new_uuid, change_data_sender, fresh_data_sender);
 
-        let communicator = Communicator::new(
+        Communicator::new(
             new_uuid,
             change_sender,
             query_sender,
             change_data_reciver,
             fresh_data_reciver,
-        );
-
-        communicator
+        )
     }
 
-    fn update_communicators(&mut self, update: DataChange<Key, Value>) {
+    fn update_communicators(&mut self, update: &DataChange<Key, Value>) {
         let keys = update.value_keys();
         let number_of_keys = keys.len();
-        let communicators = self.index.communicators_from_keys(keys);
+        let communicators = self.index.communicators_from_keys(&keys);
         event!(
             Level::DEBUG,
             "Recived data update will modify {} keys and go to {} communicators",
             number_of_keys,
             communicators.len()
         );
-        self.update_sender.send_update(update, communicators);
+        self.update_sender.send_update(&update, &communicators);
     }
 
     fn return_query(&mut self, communicator: Uuid, values: FreshData<Key, Value>) {
@@ -118,7 +116,6 @@ where
         // done on the function
         self.running_actions
             .extract_if(ResolvingAction::poll_and_finished)
-            .into_iter()
             .filter_map(|resolving_action| {
                 event!(
                     Level::TRACE,
@@ -235,11 +232,11 @@ where
         query_sender: mpsc::Sender<FreshData<Key, Value>>,
     ) {
         self.change_senders
-            .insert(communicator_uuid.clone(), change_sender);
+            .insert(*communicator_uuid, change_sender);
         self.query_senders
-            .insert(communicator_uuid.clone(), query_sender);
+            .insert(*communicator_uuid, query_sender);
     }
-    fn send_update(&self, update: DataChange<Key, Value>, targets: Vec<&Uuid>) {
+    fn send_update(&self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
         event!(
             Level::TRACE,
             "Sending change data to {} targets",
@@ -286,9 +283,9 @@ impl<Key: KeyBounds> DataToCommunicatorIndex<Key>
 where
     Key: KeyBounds,
 {
-    pub fn communicators_from_keys(&self, keys: Vec<&Key>) -> Vec<&Uuid> {
+    pub fn communicators_from_keys(&self, keys: &[&Key]) -> Vec<&Uuid> {
         let mut vec_of_vecs = vec![];
-        for key in keys.iter() {
+        for key in keys {
             if let Some(uuids) = self.val_to_comm.get(key) {
                 vec_of_vecs.extend(uuids);
             }
@@ -297,13 +294,13 @@ where
     }
 
     pub fn extend_index_with_query(&mut self, communicator: Uuid, keys: Vec<&Key>) {
-        keys.into_iter().for_each(|key| {
+        for key in keys {
             let set = self
                 .val_to_comm
                 .entry(key.clone())
-                .or_insert(HashSet::new());
-            set.insert(communicator.clone());
-        });
+                .or_default();
+            set.insert(communicator);
+        }
     }
 }
 

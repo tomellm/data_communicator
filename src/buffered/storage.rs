@@ -33,9 +33,9 @@ where
         })
     }
     fn update(&mut self, value: &Value) -> impl Future<ChangeResult>;
-    fn update_many(&mut self, values: &Vec<Value>) -> impl Future<ChangeResult>;
+    fn update_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
     fn delete(&mut self, key: &Key) -> impl Future<ChangeResult>;
-    fn delete_many(&mut self, keys: &Vec<Key>) -> impl Future<ChangeResult>;
+    fn delete_many(&mut self, keys: &[Key]) -> impl Future<ChangeResult>;
     fn handle_query(
         &mut self,
         query: QueryType<Key, Value>,
