@@ -1,5 +1,6 @@
 use lazy_async_promise::ImmediateValuePromise;
 use tokio::sync::mpsc;
+use tracing::{debug, info, trace};
 use uuid::Uuid;
 
 use super::{
@@ -49,14 +50,17 @@ where
             });
     }
     pub fn query(&self, query_type: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResult> {
+        info!("Recived query command.");
         self.sender.send_query(self.uuid, query_type)
     }
     /// Sends out an action to update a single element
     pub fn update(&self, val: Value) -> ImmediateValuePromise<ChangeResult> {
+        info!("Recived update command.");
         self.sender.send_change(ChangeType::Update(val))
     }
     /// Sends out an action to delete a single element
     pub fn delete(&self, key: Key) -> ImmediateValuePromise<ChangeResult> {
+        info!("Recived delete command.");
         self.sender.send_change(ChangeType::Delete(key))
     }
 }
@@ -88,19 +92,24 @@ where
 
     /// Returns a `ImmediateValuePromise` that will resolve to the result of the
     /// action but not to the actual data. The Data will be automatically updated
-    /// if the result is a success
+    // if the result is a success
     pub fn send_change(
         &self,
         action_type: ChangeType<Key, Value>,
     ) -> ImmediateValuePromise<ChangeResult> {
+        trace!("At the start of the change communicator send change function.");
         let new_sender = self.change_sender.clone();
         ImmediateValuePromise::new(async move {
+            trace!("Creating the change promise.");
             let (action, reciver) = Change::from_type(action_type);
-            dbg!("about to send change");
             let response = match new_sender.send(action).await {
-                Ok(()) => reciver.await.into(),
+                Ok(()) => {
+                    debug!("Sent change, now awaiting response.");
+                    reciver.await.into()
+                },
                 Err(err) => ChangeResult::Error(ChangeError::send_err(&err)),
             };
+            info!("Change result was returned, is {response:?}");
             Ok(response)
         })
     }
@@ -110,13 +119,23 @@ where
         origin_uuid: Uuid,
         query_type: QueryType<Key, Value>,
     ) -> ImmediateValuePromise<QueryResult> {
+        info!("in the send query function");
         let new_sender = self.query_sender.clone();
+        info!("after the clone");
         ImmediateValuePromise::new(async move {
+            info!("starting the promise");
             let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
             let response = match new_sender.send(query).await {
-                Ok(()) => reciver.await.into(),
-                Err(err) => QueryResult::Error(QueryError::send_err(&err)),
+                Ok(()) => {
+                    debug!("Sent query, now awaiting response.");
+                    reciver.await.into()
+                },
+                Err(err) => {
+                    debug!("Recived error from channel send {err}");
+                    QueryResult::Error(QueryError::send(&err))
+                },
             };
+            info!("Query result was returned, is: {response:?}");
             Ok(response)
         })
     }

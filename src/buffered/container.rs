@@ -2,8 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use lazy_async_promise::{DirectCacheAccess, ImmediateValuePromise};
-use tokio::sync::{mpsc, oneshot};
-use tracing::{event, Level};
+use tokio::sync::{
+    mpsc::{self, error::TryRecvError, Receiver},
+    oneshot,
+};
+use tracing::{debug, event, info, trace, warn, Level};
 use uuid::Uuid;
 
 use super::{
@@ -89,13 +92,12 @@ where
         let keys = update.value_keys();
         let number_of_keys = keys.len();
         let communicators = self.index.communicators_from_keys(&keys);
-        event!(
-            Level::DEBUG,
+        debug!(
             "Recived data update will modify {} keys and go to {} communicators",
             number_of_keys,
             communicators.len()
         );
-        self.update_sender.send_update(&update, &communicators);
+        self.update_sender.send_change(&update, &communicators);
     }
 
     fn return_query(&mut self, communicator: Uuid, values: FreshData<Key, Value>) {
@@ -117,8 +119,7 @@ where
         self.running_actions
             .extract_if(ResolvingAction::poll_and_finished)
             .filter_map(|resolving_action| {
-                event!(
-                    Level::TRACE,
+                trace!(
                     "Resolving action of type {} has finished and will be resolved",
                     resolving_action.action_type()
                 );
@@ -136,7 +137,7 @@ where
             .collect::<Vec<_>>();
 
         if !new_action.is_empty() {
-            println!("there are {} new actions", new_action.len());
+            info!("there are {} new actions", new_action.len());
         }
 
         self.running_actions.extend(new_action);
@@ -148,9 +149,9 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
-    action_reciver: mpsc::Receiver<Change<Key, Value>>,
+    change_reciver: mpsc::Receiver<Change<Key, Value>>,
     query_reciver: mpsc::Receiver<DataQuery<Key, Value>>,
-    bk_action_sender: mpsc::Sender<Change<Key, Value>>,
+    bk_change_sender: mpsc::Sender<Change<Key, Value>>,
     bk_query_sender: mpsc::Sender<DataQuery<Key, Value>>,
 }
 
@@ -165,19 +166,35 @@ where
         mpsc::Sender<Change<Key, Value>>,
         mpsc::Sender<DataQuery<Key, Value>>,
     ) {
-        (self.bk_action_sender.clone(), self.bk_query_sender.clone())
+        (self.bk_change_sender.clone(), self.bk_query_sender.clone())
     }
+
     fn recive_new(&mut self) -> Vec<Action<Key, Value>> {
         let mut new_actions: Vec<Action<Key, Value>> = vec![];
-        while let Ok(val) = self.action_reciver.try_recv() {
-            event!(Level::DEBUG, "Recived new change action");
-            new_actions.push(val.into());
-        }
-        while let Ok(val) = self.query_reciver.try_recv() {
-            event!(Level::DEBUG, "Recived new query action");
-            new_actions.push(val.into());
-        }
+        new_actions.extend(Self::loop_recive_all(&mut self.change_reciver));
+        new_actions.extend(Self::loop_recive_all(&mut self.query_reciver));
         new_actions
+    }
+
+    fn loop_recive_all<T: Into<Action<Key, Value>>>(
+        reciver: &mut Receiver<T>,
+    ) -> Vec<Action<Key, Value>> {
+        let mut actions = vec![];
+        loop {
+            match reciver.try_recv() {
+                Ok(val) => {
+                    debug!("Recived new change action");
+                    actions.push(val.into());
+                }
+                Err(err) => match err {
+                    TryRecvError::Empty => break,
+                    TryRecvError::Disconnected => {
+                        warn!("When reciveing messages in container disconnected error was encountered.")
+                    }
+                },
+            }
+        }
+        actions
     }
 }
 
@@ -191,8 +208,8 @@ where
         let (query_sender, query_reciver) = mpsc::channel(10);
 
         Self {
-            bk_action_sender: action_sender,
-            action_reciver,
+            bk_change_sender: action_sender,
+            change_reciver: action_reciver,
             bk_query_sender: query_sender,
             query_reciver,
         }
@@ -225,18 +242,27 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    /// Registeres the senders for a new communicator. These will then be used
+    /// to send data back to the communicator after a query or change.
     fn register_senders(
         &mut self,
         communicator_uuid: &Uuid,
         change_sender: mpsc::Sender<DataChange<Key, Value>>,
         query_sender: mpsc::Sender<FreshData<Key, Value>>,
     ) {
-        self.change_senders
+        let existing_change_sender = self
+            .change_senders
             .insert(*communicator_uuid, change_sender);
-        self.query_senders
-            .insert(*communicator_uuid, query_sender);
+        assert!(existing_change_sender.is_none());
+
+        let existing_query_sender = self.query_senders.insert(*communicator_uuid, query_sender);
+        assert!(existing_query_sender.is_none());
     }
-    fn send_update(&self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
+
+    /// Sends the `DataChange` to the correct targets. To know who the targets
+    /// are the index needs to be queried first. These targets should be all the
+    /// communicators that have any of the values contained in the update.
+    fn send_change(&self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
         event!(
             Level::TRACE,
             "Sending change data to {} targets",
@@ -251,6 +277,7 @@ where
             });
     }
 
+    /// Returns fresh data to the communicator that requested the data.
     fn send_fresh_data(&self, fresh_data: FreshData<Key, Value>, target: &Uuid) {
         event!(
             Level::TRACE,
@@ -295,10 +322,7 @@ where
 
     pub fn extend_index_with_query(&mut self, communicator: Uuid, keys: Vec<&Key>) {
         for key in keys {
-            let set = self
-                .val_to_comm
-                .entry(key.clone())
-                .or_default();
+            let set = self.val_to_comm.entry(key.clone()).or_default();
             set.insert(communicator);
         }
     }
@@ -333,6 +357,7 @@ where
     }
 
     fn resolve(self) -> Option<ResolvedAction<Key, Value>> {
+        info!("Resolving a action");
         match self {
             ResolvingAction::Change(mut promise, sender) => {
                 promise.take_value().map(|change_response| {

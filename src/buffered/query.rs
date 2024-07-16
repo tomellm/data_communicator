@@ -88,13 +88,18 @@ pub enum QueryError {
     Default,
     NotPresent,
     ChannelSend(String),
+    ChannelTrySend(String),
     ChannelRecive(RecvError),
 }
 
 impl QueryError {
-    pub fn send_err<T>(send_err: &mpsc::error::SendError<T>) -> Self {
+    pub fn send<T>(send_err: &mpsc::error::SendError<T>) -> Self {
         Self::ChannelSend(format!("{send_err}"))
     }
+    pub fn try_send<T>(send_err: &mpsc::error::TrySendError<T>) -> Self {
+        Self::ChannelSend(format!("{send_err}"))
+    }
+
 }
 
 impl Display for QueryError {

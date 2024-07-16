@@ -47,16 +47,20 @@ impl<Value, Error> BlankOutError<Value, Error> for Result<Value, Error> {
 mod test {
     #![allow(dead_code)]
 
-    use std::{collections::HashMap, sync::Arc};
+    use std::{collections::HashMap, sync::Arc, thread, time::Duration};
 
+    use lazy_async_promise::{ImmediateValuePromise, ImmediateValueState};
     use tokio::sync::{Mutex, MutexGuard};
     #[allow(unused_imports)]
     use tracing::Level;
+    use tracing::{debug, info, trace, warn};
     use uuid::Uuid;
 
     use super::{
+        communicator::Communicator,
         container::DataContainer,
-        test_impl::test::{Item, ExampleStorage},
+        query::QueryType,
+        test_impl::test::{ExampleStorage, Item},
     };
 
     async fn setup_container() -> (
@@ -78,6 +82,32 @@ mod test {
         check_fn(&lock)
     }
 
+    fn await_promise<T>(
+        container: &mut DataContainer<Uuid, Item, ExampleStorage>,
+        communicator: &mut Communicator<Uuid, Item>,
+        mut promise: ImmediateValuePromise<T>,
+    ) -> ImmediateValuePromise<T>
+    where
+        T: Send + Sync + 'static,
+    {
+        loop {
+            container.state_update();
+            communicator.state_update();
+            match promise.poll_state() {
+                ImmediateValueState::Updating => continue,
+                ImmediateValueState::Empty => {
+                    warn!("Promise was empty, should this state happen???");
+                    break;
+                }
+                _ => {
+                    info!("Promise finished, exiting loop!");
+                    break
+                },
+            }
+        }
+        promise
+    }
+
     #[tokio::test]
     async fn simple_test() {
         tracing_subscriber::fmt::fmt()
@@ -88,16 +118,17 @@ mod test {
         let mut communicator_one = container.communicator();
         let new_item = Item::new("some_value");
 
-        println!("about to assert that map is empty");
+        info!("about to assert that map is empty");
         assert!(check(&data_map, |map| map.is_empty()).await);
-        println!("map was empty");
+        info!("map was empty");
 
-        let _promise = communicator_one.update(new_item.clone());
+        let get_promise = communicator_one.query(QueryType::GetById(new_item.uuid));
+        let _get_promise = await_promise(&mut container, &mut communicator_one, get_promise);
 
-        communicator_one.state_update();
-        container.state_update();
+        let update_promise = communicator_one.update(new_item.clone());
+        let _update_promise = await_promise(&mut container, &mut communicator_one, update_promise);
 
-        println!("about to do second check");
+        info!("about to do second check");
         assert_eq!(
             check(&data_map, |map| map.get(&new_item.uuid).cloned()).await,
             Some(new_item)
