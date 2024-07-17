@@ -59,33 +59,33 @@ where
 
 pub trait InitFuture<FutOutput>
 where
-    Self: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
-    FutOutput: Send + Sync + ?Sized,
+    Self: std::future::Future<Output = FutOutput> + Send + 'static,
+    FutOutput: Send + ?Sized,
 {}
 
 impl<T, FutOutput> InitFuture<FutOutput> for T 
 where
-    T: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
-    FutOutput: Send + Sync + ?Sized,
+    T: std::future::Future<Output = FutOutput> + Send + 'static,
+    FutOutput: Send + ?Sized,
 {}
 
 pub trait Future<FutureOutput>
 where
-    Self: std::future::Future<Output = FutureOutput> + Send + Sync + 'static,
-    FutureOutput: Clone + Send + Sync,
+    Self: std::future::Future<Output = FutureOutput> + Send + 'static,
+    FutureOutput: Clone + Send,
 {
 }
 
 impl<T, FutOutput> Future<FutOutput> for T
 where
-    T: std::future::Future<Output = FutOutput> + Send + Sync + 'static,
-    FutOutput: Clone + Send + Sync,
+    T: std::future::Future<Output = FutOutput> + Send + 'static,
+    FutOutput: Clone + Send,
 {
 }
 
 fn to_boxed<FutOutput>(fut: impl Future<FutOutput>) -> BoxFuture<'static, FutOutput>
 where
-    FutOutput: Clone + Send + Sync + 'static,
+    FutOutput: Clone + Send + 'static,
 {
     Box::pin(fut) as BoxFuture<'static, FutOutput>
 }
