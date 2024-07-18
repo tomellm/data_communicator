@@ -10,7 +10,7 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
-    data: HashMap<Key, Value>,
+    pub data: HashMap<Key, Value>,
 }
 
 impl<Key, Value> Data<Key, Value>
