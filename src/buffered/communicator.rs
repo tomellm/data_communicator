@@ -58,10 +58,18 @@ where
         info!("Recived update command.");
         self.sender.send_change(ChangeType::Update(val))
     }
+    pub fn update_many(&self, vals: Vec<Value>) -> ImmediateValuePromise<ChangeResult> {
+        info!("Recived update command.");
+        self.sender.send_change(ChangeType::UpdateMany(vals))
+    }
     /// Sends out an action to delete a single element
     pub fn delete(&self, key: Key) -> ImmediateValuePromise<ChangeResult> {
         info!("Recived delete command.");
         self.sender.send_change(ChangeType::Delete(key))
+    }
+    pub fn delete_many(&self, keys: Vec<Key>) -> ImmediateValuePromise<ChangeResult> {
+        info!("Recived delete many command.");
+        self.sender.send_change(ChangeType::DeleteMany(keys))
     }
 }
 
