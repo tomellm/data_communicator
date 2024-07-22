@@ -15,11 +15,11 @@ pub trait GetKey<Key> {
 
 pub trait KeyBounds
 where
-    Self: Eq + Hash + Clone + Send + Sync + 'static,
+    Self: Ord + Eq + Hash + Clone + Send + Sync + 'static,
 {
 }
 
-impl<T> KeyBounds for T where T: Eq + Hash + Clone + Send + Sync + 'static {}
+impl<T> KeyBounds for T where T: Ord + Eq + Hash + Clone + Send + Sync + 'static {}
 
 pub trait ValueBounds<Key>
 where

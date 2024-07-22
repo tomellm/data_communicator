@@ -39,7 +39,7 @@ where
     }
 }
 
-pub type Predicate<Value> = Box<dyn Fn(&Value) -> bool + Send + Sync>;
+pub type Predicate<Value> = Box<dyn Fn(&Value) -> bool + Send>;
 
 pub enum QueryType<Key, Value>
 where
@@ -49,6 +49,16 @@ where
     GetById(Key),
     GetByIds(Vec<Key>),
     Predicate(Predicate<Value>),
+}
+
+impl<Key, Value> QueryType<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn predicate<T: Fn(&Value) -> bool + Send + 'static>(pred: T) -> Self {
+        Self::Predicate(Box::new(pred))
+    }
 }
 
 #[derive(Clone)]

@@ -1,7 +1,11 @@
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     ops::{Deref, DerefMut},
 };
+
+use itertools::Itertools;
+use permutation::Permutation;
 
 use super::{change::ChangeType, KeyBounds, ValueBounds};
 
@@ -11,6 +15,8 @@ where
     Value: ValueBounds<Key>,
 {
     pub data: HashMap<Key, Value>,
+    pub sorted: Permutation,
+    pub sorting_fn: Box<dyn FnMut(&Value, &Value) -> Ordering>,
 }
 
 impl<Key, Value> Data<Key, Value>
@@ -20,13 +26,35 @@ where
 {
     #[must_use]
     pub fn new() -> Self {
+        let data = HashMap::new();
+        let sorting_fn = |a: &Value, b: &Value| a.key().cmp(&b.key());
         Self {
-            data: HashMap::new(),
+            data,
+            sorted: permutation::sort_by(Vec::<Value>::new(), sorting_fn),
+            sorting_fn: Box::new(sorting_fn),
         }
     }
-
-    pub fn update_with_fresh(&mut self, fresh_data: FreshData<Key, Value>) {
-        self.data.extend(HashMap::from(fresh_data));
+    pub fn extend(&mut self, extend: HashMap<Key, Value>) {
+        self.data.extend(extend);
+        self.resort();
+    }
+    pub fn update(&mut self, update: Vec<Value>) {
+        self.data
+            .extend(update.into_iter().map(|v| (v.key().clone(), v)));
+        self.resort();
+    }
+    pub fn delete(&mut self, keys: Vec<Key>) {
+        let _ = self.data.extract_if(|k, _| keys.contains(k));
+        self.resort();
+    }
+    pub fn resort(&mut self) {
+        self.sorted = permutation::sort_by(&self.data.values().collect_vec(), |a, b| {
+            (self.sorting_fn)(*a, *b)
+        })
+    }
+    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + 'static>(&mut self, sorting_fn: F) {
+        self.sorting_fn = Box::new(sorting_fn);
+        self.resort();
     }
 }
 
@@ -34,7 +62,7 @@ impl<Key, Value> Default for Data<Key, Value>
 where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
- {
+{
     fn default() -> Self {
         Self::new()
     }
@@ -42,6 +70,16 @@ where
 
 #[derive(Clone)]
 pub struct FreshData<Key, Value>(HashMap<Key, Value>);
+
+impl<Key, Value> FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn add_fresh_data(self, data: &mut Data<Key, Value>) {
+        data.extend(HashMap::from(self));
+    }
+}
 
 impl<Key, Value> Deref for FreshData<Key, Value> {
     type Target = HashMap<Key, Value>;
@@ -130,19 +168,8 @@ where
     /// state
     pub fn update_data(self, data: &mut Data<Key, Value>) {
         match self {
-            Self::Update(values) => Self::update(values, data),
-            Self::Delete(keys) => Self::delete(keys, data),
-        }
-    }
-
-    fn update(values: Vec<Value>, data: &mut Data<Key, Value>) {
-        for value in values {
-            data.data.insert(value.key().clone(), value);
-        }
-    }
-    fn delete(keys: Vec<Key>, data: &mut Data<Key, Value>) {
-        for key in keys {
-            data.data.remove(&key);
+            Self::Update(values) => data.update(values),
+            Self::Delete(keys) => data.delete(keys),
         }
     }
 }

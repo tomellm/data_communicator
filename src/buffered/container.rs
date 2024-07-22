@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use lazy_async_promise::{DirectCacheAccess, ImmediateValuePromise};
+use lazy_async_promise::{BoxedSendError, DirectCacheAccess, ImmediateValuePromise, ImmediateValueState};
 use tokio::sync::{
     mpsc::{self, error::TryRecvError, Receiver},
     oneshot,
@@ -54,6 +54,7 @@ where
     ///   them to the Storage to be processed. The `ImmediateValuePromises` created
     ///   by the storage will then
     pub fn state_update(&mut self) {
+        self.update_sender.state_update();
         self.resolve_finished_actions()
             .into_iter()
             .for_each(|action| match action {
@@ -223,6 +224,7 @@ where
 {
     change_senders: HashMap<Uuid, mpsc::Sender<DataChange<Key, Value>>>,
     query_senders: HashMap<Uuid, mpsc::Sender<FreshData<Key, Value>>>,
+    sending_responses: Vec<ImmediateValuePromise<()>>,
 }
 impl<Key, Value> Default for UpdateSender<Key, Value>
 where
@@ -233,6 +235,7 @@ where
         Self {
             change_senders: HashMap::new(),
             query_senders: HashMap::new(),
+            sending_responses: vec![]
         }
     }
 }
@@ -259,26 +262,39 @@ where
         assert!(existing_query_sender.is_none());
     }
 
+    pub fn state_update(&mut self) {
+        let _ = self.sending_responses.extract_if(|sending_response| {
+            match sending_response.poll_state() {
+                ImmediateValueState::Updating => false,
+                _ => true
+            }
+        });
+    }
+
     /// Sends the `DataChange` to the correct targets. To know who the targets
     /// are the index needs to be queried first. These targets should be all the
     /// communicators that have any of the values contained in the update.
-    fn send_change(&self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
+    fn send_change(&mut self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
         event!(
             Level::TRACE,
             "Sending change data to {} targets",
             targets.len()
         );
-        self.change_senders
+        let new_sending_responses = self.change_senders
             .iter()
-            .filter(|(uuid, _)| targets.contains(uuid))
-            .for_each(|(_, sender)| {
-                // FIXME: Not sure if this can be a blocking send
-                let _ = sender.blocking_send(update.clone());
-            });
+            .filter_map(|(uuid, sender)| if targets.contains(&uuid) { Some(sender.clone()) } else { None })
+            .map(|sender| {
+                let update = update.clone();
+                ImmediateValuePromise::new(async move {
+                    sender.send(update).await.map_err(|err|BoxedSendError::from(err))
+                })
+            })
+        .collect_vec();
+        self.sending_responses.extend(new_sending_responses);
     }
 
     /// Returns fresh data to the communicator that requested the data.
-    fn send_fresh_data(&self, fresh_data: FreshData<Key, Value>, target: &Uuid) {
+    fn send_fresh_data(&mut self, fresh_data: FreshData<Key, Value>, target: &Uuid) {
         event!(
             Level::TRACE,
             "Sending fresh data to communicator {}",
@@ -287,7 +303,13 @@ where
         self.query_senders
             .get(target)
             // FIXME: Not sure if this can be a blocking send
-            .map(|sender| sender.blocking_send(fresh_data));
+            .map(|sender| {
+                let new_sender = sender.clone();
+                let new_sending_response = ImmediateValuePromise::new(async move {
+                    new_sender.send(fresh_data).await.map_err(|err|BoxedSendError::from(err))
+                });
+                self.sending_responses.push(new_sending_response);
+            });
     }
 }
 
@@ -362,14 +384,22 @@ where
             ResolvingAction::Change(mut promise, sender) => {
                 promise.take_value().map(|change_response| {
                     let (data_change, change_result) = change_response.into();
-                    sender.send(change_result).unwrap();
+                    let _ = sender.send(change_result).map_err(|value| {
+                        warn!(
+                            "Change result could not be sent because reciver was dropped. Result was: {value:?}"
+                            )
+                    });
                     data_change.map(|data| ResolvedAction::Change(data))
                 })?
             }
             ResolvingAction::Query(mut promise, uuid, sender) => {
                 promise.take_value().map(|query_response| {
                     let (fresh_data, result) = query_response.into();
-                    sender.send(result).unwrap();
+                    let _ = sender.send(result).map_err(|value| {
+                        warn!(
+                            "Qeuery result could not be sent because reciver was dropped. Result was: {value:?}"
+                            )
+                    });
                     fresh_data.map(|data| ResolvedAction::Query(data, uuid))
                 })?
             }

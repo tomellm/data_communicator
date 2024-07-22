@@ -1,3 +1,6 @@
+use std::cmp::Ordering;
+
+use itertools::Itertools;
 use lazy_async_promise::ImmediateValuePromise;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
@@ -10,11 +13,15 @@ use super::{
     KeyBounds, ValueBounds,
 };
 
-pub struct Communicator<Key: KeyBounds, Value: ValueBounds<Key>> {
-    pub uuid: Uuid,
-    pub sender: Sender<Key, Value>,
-    pub reciver: Reciver<Key, Value>,
-    pub data: Data<Key, Value>,
+pub struct Communicator<Key: KeyBounds, Value: ValueBounds<Key>>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    uuid: Uuid,
+    sender: Sender<Key, Value>,
+    reciver: Reciver<Key, Value>,
+    data: Data<Key, Value>,
 }
 
 impl<Key, Value> Communicator<Key, Value>
@@ -46,7 +53,7 @@ where
             .into_iter()
             .for_each(|action| match action {
                 RecievedAction::Change(update) => update.update_data(&mut self.data),
-                RecievedAction::Fresh(data) => self.data.update_with_fresh(data),
+                RecievedAction::Fresh(data) => data.add_fresh_data(&mut self.data),
             });
     }
     pub fn query(&self, query_type: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResult> {
@@ -70,6 +77,42 @@ where
     pub fn delete_many(&self, keys: Vec<Key>) -> ImmediateValuePromise<ChangeResult> {
         info!("Recived delete many command.");
         self.sender.send_change(ChangeType::DeleteMany(keys))
+    }
+    pub fn is_empty(&self) -> bool {
+        self.data.data.is_empty()
+    }
+    pub fn len(&self) -> usize {
+        self.data.data.len()
+    }
+    pub fn data(&self) -> Vec<&Value> {
+        self.data.data.values().collect_vec()
+    }
+    pub fn data_iter(&self) -> impl Iterator<Item = &Value> {
+        self.data.data.values()
+    }
+    pub fn data_cloned(&self) -> Vec<Value> {
+        self.data.data.values().cloned().collect_vec()
+    }
+    pub fn data_sorted(&self) -> Vec<&Value> {
+        self.data.sorted.apply_slice(self.data())
+    }
+    pub fn data_sorted_iter(&self) -> impl Iterator<Item = &Value> {
+        self.data.sorted.apply_slice(self.data()).into_iter()
+    }
+    pub fn sort<F: FnMut(&Value, &Value) -> Ordering + 'static>(&mut self, sorting_fn: F) {
+        self.data.new_sorting_fn(sorting_fn);
+    }
+    pub fn keys(&self) -> Vec<&Key> {
+        self.data.data.keys().collect_vec()
+    }
+    pub fn keys_cloned(&self) -> Vec<Key> {
+        self.data.data.keys().cloned().collect_vec()
+    }
+    pub fn keys_iter(&self) -> impl Iterator<Item = &Key> {
+        self.data.data.keys()
+    }
+    pub fn touples(&self) -> Vec<(&Key, &Value)> {
+        self.data.data.iter().collect_vec()
     }
 }
 

@@ -57,6 +57,7 @@ dependencies = [
  "futures",
  "itertools",
  "lazy_async_promise",
+ "permutation",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -272,6 +273,12 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "permutation"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df202b0b0f5b8e389955afd5f27b007b00fb948162953f1db9c70d2c7e3157d7"
 
 [[package]]
 name = "pin-project-lite"
