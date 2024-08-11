@@ -1,12 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use itertools::Itertools;
-use lazy_async_promise::{BoxedSendError, DirectCacheAccess, ImmediateValuePromise, ImmediateValueState};
+use lazy_async_promise::{
+    BoxedSendError, DirectCacheAccess, ImmediateValuePromise, ImmediateValueState,
+};
 use tokio::sync::{
     mpsc::{self, error::TryRecvError, Receiver},
     oneshot,
 };
-use tracing::{debug, event, info, trace, warn, Level};
+use tracing::{debug, enabled, error, event, info, level_filters::LevelFilter, trace, warn, Level};
 use uuid::Uuid;
 
 use super::{
@@ -58,8 +63,14 @@ where
         self.resolve_finished_actions()
             .into_iter()
             .for_each(|action| match action {
-                ResolvedAction::Change(change) => self.update_communicators(&change),
-                ResolvedAction::Query(query, uuid) => self.return_query(uuid, query),
+                ResolvedAction::Change(change) => {
+                    trace!("Finished change action, updating communicators.");
+                    self.update_communicators(&change)
+                }
+                ResolvedAction::Query(query, uuid) => {
+                    trace!("Finished query action, returning result.");
+                    self.return_query(uuid, query)
+                }
             });
         self.recive_new_actions();
     }
@@ -67,11 +78,7 @@ where
     pub fn communicator(&mut self) -> Communicator<Key, Value> {
         let new_uuid = Uuid::new_v4();
 
-        event!(
-            Level::INFO,
-            "Creating new Communicator with uuid: {}.",
-            new_uuid
-        );
+        info!("Creating new Communicator with uuid: {}.", new_uuid);
 
         let (change_sender, query_sender) = self.reciver.senders();
         let (change_data_sender, change_data_reciver) = mpsc::channel(10);
@@ -103,8 +110,7 @@ where
 
     fn return_query(&mut self, communicator: Uuid, values: FreshData<Key, Value>) {
         let keys = values.keys().collect::<Vec<_>>();
-        event!(
-            Level::DEBUG,
+        debug!(
             "Fresh data will send {} new values to communicator {}",
             keys.len(),
             communicator
@@ -134,11 +140,14 @@ where
             .reciver
             .recive_new()
             .into_iter()
-            .map(|action| action.handle_action(&mut self.storage))
+            .map(|action| {
+                debug!("Recived new [{action}] action to work on.");
+                action.handle_action(&mut self.storage)
+            })
             .collect::<Vec<_>>();
 
         if !new_action.is_empty() {
-            info!("there are {} new actions", new_action.len());
+            info!("There are {} new actions to work on.", new_action.len());
         }
 
         self.running_actions.extend(new_action);
@@ -184,13 +193,14 @@ where
         loop {
             match reciver.try_recv() {
                 Ok(val) => {
-                    debug!("Recived new change action");
-                    actions.push(val.into());
+                    let action = val.into();
+                    trace!("Recived new [{action}] from Reciver.");
+                    actions.push(action);
                 }
                 Err(err) => match err {
                     TryRecvError::Empty => break,
                     TryRecvError::Disconnected => {
-                        warn!("When reciveing messages in container disconnected error was encountered.")
+                        unreachable!("One of the recivers of a container has been disconnected, should not be possible.");
                     }
                 },
             }
@@ -235,7 +245,7 @@ where
         Self {
             change_senders: HashMap::new(),
             query_senders: HashMap::new(),
-            sending_responses: vec![]
+            sending_responses: vec![],
         }
     }
 }
@@ -266,7 +276,7 @@ where
         let _ = self.sending_responses.extract_if(|sending_response| {
             match sending_response.poll_state() {
                 ImmediateValueState::Updating => false,
-                _ => true
+                _ => true,
             }
         });
     }
@@ -275,41 +285,65 @@ where
     /// are the index needs to be queried first. These targets should be all the
     /// communicators that have any of the values contained in the update.
     fn send_change(&mut self, update: &DataChange<Key, Value>, targets: &[&Uuid]) {
-        event!(
-            Level::TRACE,
-            "Sending change data to {} targets",
-            targets.len()
-        );
-        let new_sending_responses = self.change_senders
+        trace!("Sending change data to {} targets", targets.len());
+
+        let new_sending_responses = self
+            .change_senders
             .iter()
-            .filter_map(|(uuid, sender)| if targets.contains(&uuid) { Some(sender.clone()) } else { None })
-            .map(|sender| {
+            .filter_map(|(uuid, sender)| {
+                if targets.contains(&uuid) {
+                    Some((*uuid, sender.clone()))
+                } else {
+                    None
+                }
+            })
+            .map(|(uuid, sender)| {
                 let update = update.clone();
                 ImmediateValuePromise::new(async move {
-                    sender.send(update).await.map_err(|err|BoxedSendError::from(err))
+                    let send_res = sender
+                        .send(update)
+                        .await
+                        .map_err(|err| BoxedSendError::from(err));
+                    debug!("Sent off data change to communicator [{uuid}].");
+                    send_res
                 })
             })
-        .collect_vec();
-        self.sending_responses.extend(new_sending_responses);
+            .collect_vec();
+        if !new_sending_responses.is_empty() {
+            debug!(
+                "Added {} new sending responses to the vec.",
+                new_sending_responses.len()
+            );
+            self.sending_responses.extend(new_sending_responses);
+        }
     }
 
     /// Returns fresh data to the communicator that requested the data.
     fn send_fresh_data(&mut self, fresh_data: FreshData<Key, Value>, target: &Uuid) {
-        event!(
-            Level::TRACE,
-            "Sending fresh data to communicator {}",
-            target
-        );
-        self.query_senders
-            .get(target)
-            // FIXME: Not sure if this can be a blocking send
-            .map(|sender| {
-                let new_sender = sender.clone();
-                let new_sending_response = ImmediateValuePromise::new(async move {
-                    new_sender.send(fresh_data).await.map_err(|err|BoxedSendError::from(err))
-                });
-                self.sending_responses.push(new_sending_response);
+        trace!("Sending fresh data to communicator [{}]", target);
+
+        let prev_len_sending_res = self.sending_responses.len();
+
+        self.query_senders.get(target).map(|sender| {
+            let target = *target;
+            let new_sender = sender.clone();
+            let new_sending_response = ImmediateValuePromise::new(async move {
+                let send_res = new_sender
+                    .send(fresh_data)
+                    .await
+                    .map_err(|err| BoxedSendError::from(err));
+                debug!("Sent off fresh data to communicator [{target}].");
+                send_res
             });
+            self.sending_responses.push(new_sending_response);
+        });
+
+        if enabled!(Level::DEBUG) {
+            let len_diff = self.sending_responses.len() - prev_len_sending_res;
+            if len_diff > 0 {
+                debug!("Added {} new sending responses to the vec", len_diff);
+            }
+        }
     }
 }
 
@@ -379,16 +413,14 @@ where
     }
 
     fn resolve(self) -> Option<ResolvedAction<Key, Value>> {
-        info!("Resolving a action");
         match self {
             ResolvingAction::Change(mut promise, sender) => {
                 promise.take_value().map(|change_response| {
                     let (data_change, change_result) = change_response.into();
                     let _ = sender.send(change_result).map_err(|value| {
-                        warn!(
-                            "Change result could not be sent because reciver was dropped. Result was: {value:?}"
-                            )
+                        warn!("Change result could not be sent because reciver was dropped. Result was: [{value:?}]")
                     });
+                    debug!("Sent reponse of change result to communicator");
                     data_change.map(|data| ResolvedAction::Change(data))
                 })?
             }
@@ -396,10 +428,9 @@ where
                 promise.take_value().map(|query_response| {
                     let (fresh_data, result) = query_response.into();
                     let _ = sender.send(result).map_err(|value| {
-                        warn!(
-                            "Qeuery result could not be sent because reciver was dropped. Result was: {value:?}"
-                            )
+                        warn!("Qeuery result could not be sent because reciver was dropped. Result was: [{value:?}]")
                     });
+                    debug!("Sent response of query result to communicator [{uuid}]");
                     fresh_data.map(|data| ResolvedAction::Query(data, uuid))
                 })?
             }
@@ -451,6 +482,23 @@ where
                 query.response_sender,
             ),
         }
+    }
+}
+
+impl<Key, Value> Display for Action<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Change(_) => "Change(..)",
+                Self::Query(_) => "Query(..)",
+            }
+        )
     }
 }
 

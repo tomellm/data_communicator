@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::{Debug, Display}};
 
 use lazy_async_promise::BoxedSendError;
 use tokio::sync::{
@@ -13,7 +13,11 @@ pub struct Change<Key: KeyBounds, Value: ValueBounds<Key>> {
     pub action: ChangeType<Key, Value>,
 }
 
-impl<Key: KeyBounds, Value: ValueBounds<Key>> Change<Key, Value> {
+impl<Key, Value> Change<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>
+{
     pub fn from_type(
         action_type: ChangeType<Key, Value>,
     ) -> (Self, oneshot::Receiver<ChangeResult>) {
@@ -38,11 +42,26 @@ impl<Key: KeyBounds, Value: ValueBounds<Key>> Change<Key, Value> {
     }
 }
 
-pub enum ChangeType<Key: KeyBounds, Value: ValueBounds<Key>> {
+pub enum ChangeType<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>
+{
     Update(Value),
     UpdateMany(Vec<Value>),
     Delete(Key),
     DeleteMany(Vec<Key>),
+}
+
+impl<Key: KeyBounds, Value: ValueBounds<Key>> Display for ChangeType<Key, Value> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Self::Update(_) => String::from("Update"),
+            Self::UpdateMany(vals) => format!("UpdateMany({})", vals.len()),
+            Self::Delete(_) => String::from("Delete"),
+            Self::DeleteMany(vals) => format!("DeleteMany({})", vals.len()),
+        })
+    }
 }
 
 pub enum ChangeResponse<Key: KeyBounds, Value: ValueBounds<Key>> {

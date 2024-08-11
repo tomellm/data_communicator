@@ -6,6 +6,7 @@ use std::{
 
 use itertools::Itertools;
 use permutation::Permutation;
+use tracing::trace;
 
 use super::{change::ChangeType, KeyBounds, ValueBounds};
 
@@ -35,16 +36,19 @@ where
         }
     }
     pub fn extend(&mut self, extend: HashMap<Key, Value>) {
+        trace!("About to extend this data object with {} values", extend.len());
         self.data.extend(extend);
         self.resort();
     }
     pub fn update(&mut self, update: Vec<Value>) {
+        trace!("About to update {} values in this data object", update.len());
         self.data
             .extend(update.into_iter().map(|v| (v.key().clone(), v)));
         self.resort();
     }
     pub fn delete(&mut self, keys: Vec<Key>) {
-        let _ = self.data.extract_if(|k, _| keys.contains(k));
+        let deleted_values = self.data.extract_if(|k, _| keys.contains(k)).collect_vec();
+        trace!("Delete {} value from this data object", deleted_values.len());
         self.resort();
     }
     pub fn resort(&mut self) {

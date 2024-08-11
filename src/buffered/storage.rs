@@ -41,12 +41,14 @@ where
         query: QueryType<Key, Value>,
     ) -> ImmediateValuePromise<QueryResponse<Key, Value>> {
         let query_future = match query {
+            QueryType::All => to_boxed(self.get_all()),
             QueryType::GetById(id) => to_boxed(self.get_by_id(id)),
             QueryType::GetByIds(ids) => to_boxed(self.get_by_ids(ids)),
             QueryType::Predicate(pred) => to_boxed(self.get_by_predicate(pred)),
         };
         ImmediateValuePromise::new(async move { Ok(query_future.await) })
     }
+    fn get_all(&mut self) -> impl Future<QueryResponse<Key, Value>>;
     fn get_by_id(&mut self, key: Key) -> impl Future<QueryResponse<Key, Value>>;
     // TODO: this function could technically have a default implementation
     // where it just uses the predicate function to do a search

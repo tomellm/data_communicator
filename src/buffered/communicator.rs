@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
 use itertools::Itertools;
-use lazy_async_promise::ImmediateValuePromise;
+use lazy_async_promise::{BoxedSendError, ImmediateValuePromise};
 use tokio::sync::mpsc;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use uuid::Uuid;
 
 use super::{
@@ -57,25 +57,28 @@ where
             });
     }
     pub fn query(&self, query_type: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResult> {
-        info!("Recived query command.");
+        trace!("Recived query command.");
         self.sender.send_query(self.uuid, query_type)
+    }
+    pub fn query_action(&self, query_type: QueryType<Key, Value>) -> impl FnOnce() -> impl std::future::Future<Output = Result<QueryResult, BoxedSendError>> {
+        self.sender.send_query_action(self.uuid, query_type)
     }
     /// Sends out an action to update a single element
     pub fn update(&self, val: Value) -> ImmediateValuePromise<ChangeResult> {
-        info!("Recived update command.");
+        trace!("Recived update command.");
         self.sender.send_change(ChangeType::Update(val))
     }
     pub fn update_many(&self, vals: Vec<Value>) -> ImmediateValuePromise<ChangeResult> {
-        info!("Recived update command.");
+        trace!("Recived update command.");
         self.sender.send_change(ChangeType::UpdateMany(vals))
     }
     /// Sends out an action to delete a single element
     pub fn delete(&self, key: Key) -> ImmediateValuePromise<ChangeResult> {
-        info!("Recived delete command.");
+        trace!("Recived delete command.");
         self.sender.send_change(ChangeType::Delete(key))
     }
     pub fn delete_many(&self, keys: Vec<Key>) -> ImmediateValuePromise<ChangeResult> {
-        info!("Recived delete many command.");
+        trace!("Recived delete many command.");
         self.sender.send_change(ChangeType::DeleteMany(keys))
     }
     pub fn is_empty(&self) -> bool {
@@ -148,19 +151,21 @@ where
         &self,
         action_type: ChangeType<Key, Value>,
     ) -> ImmediateValuePromise<ChangeResult> {
-        trace!("At the start of the change communicator send change function.");
         let new_sender = self.change_sender.clone();
         ImmediateValuePromise::new(async move {
-            trace!("Creating the change promise.");
+            let action_type_str = format!("{action_type}");
             let (action, reciver) = Change::from_type(action_type);
             let response = match new_sender.send(action).await {
                 Ok(()) => {
-                    debug!("Sent change, now awaiting response.");
+                    debug!("Change [{action_type_str}] was sent now awaiting response.");
                     reciver.await.into()
                 },
-                Err(err) => ChangeResult::Error(ChangeError::send_err(&err)),
+                Err(err) => {
+                    trace!("Change [{action_type_str}] returned an error [{err}]");
+                    ChangeResult::Error(ChangeError::send_err(&err))
+                },
             };
-            info!("Change result was returned, is {response:?}");
+            info!("Result for change type [{action_type_str}] was returned, is [{response:?}]");
             Ok(response)
         })
     }
@@ -170,25 +175,47 @@ where
         origin_uuid: Uuid,
         query_type: QueryType<Key, Value>,
     ) -> ImmediateValuePromise<QueryResult> {
-        info!("in the send query function");
         let new_sender = self.query_sender.clone();
-        info!("after the clone");
         ImmediateValuePromise::new(async move {
-            info!("starting the promise");
+            let query_type_str = format!("{query_type}");
             let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
             let response = match new_sender.send(query).await {
                 Ok(()) => {
-                    debug!("Sent query, now awaiting response.");
+                    debug!("Query [{query_type_str}] was sent now awaiting response.");
                     reciver.await.into()
                 },
                 Err(err) => {
-                    debug!("Recived error from channel send {err}");
+                    trace!("Query [{query_type_str}] returned an error [{err}]");
                     QueryResult::Error(QueryError::send(&err))
                 },
             };
-            info!("Query result was returned, is: {response:?}");
+            info!("Result for query type [{query_type_str}] was returned, is [{response:?}]");
             Ok(response)
         })
+    }
+    
+    pub fn send_query_action(
+        &self,
+        origin_uuid: Uuid,
+        query_type: QueryType<Key, Value>,
+    ) -> impl FnOnce() -> impl std::future::Future<Output = Result<QueryResult, BoxedSendError>> {
+        let new_sender = self.query_sender.clone();
+        move || async move {
+            let query_type_str = format!("{query_type}");
+            let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
+            let response = match new_sender.send(query).await {
+                Ok(()) => {
+                    debug!("Query [{query_type_str}] was sent now awaiting response.");
+                    reciver.await.into()
+                },
+                Err(err) => {
+                    trace!("Query [{query_type_str}] returned an error [{err}]");
+                    QueryResult::Error(QueryError::send(&err))
+                },
+            };
+            info!("Result for query type [{query_type_str}] was returned, is [{response:?}]");
+            Ok(response)
+        }
     }
 }
 

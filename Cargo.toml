@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 futures = "0.3.30"
 itertools = "0.13.0"
-lazy_async_promise = "0.5.0"
+lazy_async_promise = { path = "/Users/tomellm/Documents/coding-projects/lazy_async_promise" } #"0.5.0"
 permutation = "0.4.1"
 tokio = { version = "1.38.0", features = ["macros"] }
 tracing = "0.1.40"

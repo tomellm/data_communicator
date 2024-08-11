@@ -46,10 +46,28 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
+    All,
     GetById(Key),
     GetByIds(Vec<Key>),
     Predicate(Predicate<Value>),
 }
+
+impl<Key, Value> Display for QueryType<Key, Value> 
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Self::All => String::from("All"),
+            Self::GetById(_) => String::from("GetById"),
+            Self::GetByIds(vals) => format!("GetByIds({})", vals.len()),
+            Self::Predicate(_) => String::from("Predicate"),
+        })
+    }
+}
+
+
 
 impl<Key, Value> QueryType<Key, Value>
 where

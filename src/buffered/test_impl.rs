@@ -79,6 +79,18 @@ pub mod test {
                 ChangeResult::Success
             }
         }
+        fn get_all(&mut self) -> impl Future<QueryResponse<Uuid, Item>> {
+            let map = self.map.clone();
+            async move {
+                QueryResponse::Ok(map.lock()
+                    .await
+                    .values()
+                    .cloned()
+                    .collect_vec()
+                    .into()
+                )
+            }
+        }
         fn get_by_id(&mut self, key: Uuid) -> impl Future<QueryResponse<Uuid, Item>> {
             let map = self.map.clone();
             async move {

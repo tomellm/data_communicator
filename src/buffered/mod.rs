@@ -47,19 +47,21 @@ impl<Value, Error> BlankOutError<Value, Error> for Result<Value, Error> {
 mod test {
     #![allow(dead_code)]
 
-    use std::{collections::HashMap, sync::Arc, thread, time::Duration};
+    #[allow(unused_imports)]
+    use crate::buffered::query::QueryType;
+
+    use std::{collections::HashMap, sync::Arc};
 
     use lazy_async_promise::{ImmediateValuePromise, ImmediateValueState};
     use tokio::sync::{Mutex, MutexGuard};
     #[allow(unused_imports)]
     use tracing::Level;
-    use tracing::{debug, info, trace, warn};
+    use tracing::{info, warn};
     use uuid::Uuid;
 
     use super::{
         communicator::Communicator,
         container::DataContainer,
-        query::QueryType,
         test_impl::test::{ExampleStorage, Item},
     };
 
