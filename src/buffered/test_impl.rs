@@ -64,10 +64,10 @@ pub mod test {
             }
         }
         fn delete_many(&mut self, keys: &[Uuid]) -> impl Future<ChangeResult> {
-            let map = self.map.clone();
-            let keys = keys.to_vec();
+            let _map = self.map.clone();
+            let _keys = keys.to_vec();
             async move {
-                let _ = map.lock().await.extract_if(|key, _| keys.contains(key));
+                //let _ = map.lock().await.drain_if(|key, _| keys.contains(key));
                 ChangeResult::Success
             }
         }

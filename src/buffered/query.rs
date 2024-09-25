@@ -92,6 +92,21 @@ where
     Err(QueryError),
 }
 
+impl<V, E, Key, Value> From<Result<V, E>> for QueryResponse<Key, Value>
+where
+    V: Into<FreshData<Key, Value>>,
+    E: Into<QueryError>,
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: Result<V, E>) -> Self {
+        match value {
+            Ok(val) => QueryResponse::Ok(val.into()),
+            Err(err) => QueryResponse::Err(err.into())
+        }
+    }
+}
+
 impl<Key, Value> From<QueryResponse<Key, Value>> for (Option<FreshData<Key, Value>>, QueryResult)
 where
     Key: KeyBounds,

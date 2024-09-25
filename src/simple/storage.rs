@@ -162,8 +162,7 @@ mod tests {
                     .lock()
                     .await
                     .values()
-                    .into_iter()
-                    .map(|v| v.clone())
+                    .cloned()
                     .collect::<Vec<_>>();
                 Response::ok(&ActionType::GetAll(vals))
             }

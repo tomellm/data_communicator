@@ -10,6 +10,8 @@ use tracing::trace;
 
 use super::{change::ChangeType, KeyBounds, ValueBounds};
 
+type SortingFn<Value> = Box<dyn FnMut(&Value, &Value) -> Ordering>;
+
 pub struct Data<Key, Value>
 where
     Key: KeyBounds,
@@ -17,7 +19,7 @@ where
 {
     pub data: HashMap<Key, Value>,
     pub sorted: Permutation,
-    pub sorting_fn: Box<dyn FnMut(&Value, &Value) -> Ordering>,
+    pub sorting_fn: SortingFn<Value>,
 }
 
 impl<Key, Value> Data<Key, Value>
@@ -28,7 +30,7 @@ where
     #[must_use]
     pub fn new() -> Self {
         let data = HashMap::new();
-        let sorting_fn = |a: &Value, b: &Value| a.key().cmp(&b.key());
+        let sorting_fn = |a: &Value, b: &Value| a.key().cmp(b.key());
         Self {
             data,
             sorted: permutation::sort_by(Vec::<Value>::new(), sorting_fn),
@@ -47,12 +49,17 @@ where
         self.resort();
     }
     pub fn delete(&mut self, keys: Vec<Key>) {
-        let deleted_values = self.data.extract_if(|k, _| keys.contains(k)).collect_vec();
-        trace!("Delete {} value from this data object", deleted_values.len());
+        let mut count = 0;
+        for key in keys.iter() {
+            if self.data.remove(key).is_some() {
+                count += 1;
+            }
+        }
+        trace!("Delete {count} value from this data object");
         self.resort();
     }
     pub fn resort(&mut self) {
-        self.sorted = permutation::sort_by(&self.data.values().collect_vec(), |a, b| {
+        self.sorted = permutation::sort_by(self.data.values().collect_vec(), |a, b| {
             (self.sorting_fn)(*a, *b)
         })
     }

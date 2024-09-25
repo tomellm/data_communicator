@@ -11,7 +11,7 @@ use tokio::sync::{
     mpsc::{self, error::TryRecvError, Receiver},
     oneshot,
 };
-use tracing::{debug, enabled, error, event, info, level_filters::LevelFilter, trace, warn, Level};
+use tracing::{debug, enabled, info, trace, warn, Level};
 use uuid::Uuid;
 
 use super::{
@@ -20,7 +20,7 @@ use super::{
     data::{DataChange, FreshData},
     query::{DataQuery, QueryResponse, QueryResult},
     storage::Storage,
-    utils::PromiseUtilities,
+    utils::{DrainIf, PromiseUtilities},
     KeyBounds, ValueBounds,
 };
 
@@ -105,7 +105,7 @@ where
             number_of_keys,
             communicators.len()
         );
-        self.update_sender.send_change(&update, &communicators);
+        self.update_sender.send_change(update, &communicators);
     }
 
     fn return_query(&mut self, communicator: Uuid, values: FreshData<Key, Value>) {
@@ -124,7 +124,7 @@ where
         // promise. I think this is nessesary since otherwise no work will be
         // done on the function
         self.running_actions
-            .extract_if(ResolvingAction::poll_and_finished)
+            .drain_if_iter(|e| e.poll_and_finished())
             .filter_map(|resolving_action| {
                 trace!(
                     "Resolving action of type {} has finished and will be resolved",
@@ -132,7 +132,7 @@ where
                 );
                 resolving_action.resolve()
             })
-            .collect()
+        .collect_vec()
     }
 
     fn recive_new_actions(&mut self) {
@@ -273,12 +273,9 @@ where
     }
 
     pub fn state_update(&mut self) {
-        let _ = self.sending_responses.extract_if(|sending_response| {
-            match sending_response.poll_state() {
-                ImmediateValueState::Updating => false,
-                _ => true,
-            }
-        });
+        let _ = self
+            .sending_responses
+            .drain_if(|e| !matches!(e.poll_state(), ImmediateValueState::Updating));
     }
 
     /// Sends the `DataChange` to the correct targets. To know who the targets
@@ -303,7 +300,7 @@ where
                     let send_res = sender
                         .send(update)
                         .await
-                        .map_err(|err| BoxedSendError::from(err));
+                        .map_err(BoxedSendError::from);
                     debug!("Sent off data change to communicator [{uuid}].");
                     send_res
                 })
@@ -324,19 +321,19 @@ where
 
         let prev_len_sending_res = self.sending_responses.len();
 
-        self.query_senders.get(target).map(|sender| {
+        if let Some(sender) = self.query_senders.get(target) {
             let target = *target;
             let new_sender = sender.clone();
             let new_sending_response = ImmediateValuePromise::new(async move {
                 let send_res = new_sender
                     .send(fresh_data)
                     .await
-                    .map_err(|err| BoxedSendError::from(err));
+                    .map_err(BoxedSendError::from);
                 debug!("Sent off fresh data to communicator [{target}].");
                 send_res
             });
             self.sending_responses.push(new_sending_response);
-        });
+        };
 
         if enabled!(Level::DEBUG) {
             let len_diff = self.sending_responses.len() - prev_len_sending_res;
