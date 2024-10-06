@@ -10,7 +10,7 @@ use tracing::trace;
 
 use super::{change::ChangeType, KeyBounds, ValueBounds};
 
-type SortingFn<Value> = Box<dyn FnMut(&Value, &Value) -> Ordering>;
+type SortingFn<Value> = Box<dyn FnMut(&Value, &Value) -> Ordering + Send + 'static>;
 
 pub struct Data<Key, Value>
 where
@@ -63,7 +63,7 @@ where
             (self.sorting_fn)(*a, *b)
         })
     }
-    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + 'static>(&mut self, sorting_fn: F) {
+    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(&mut self, sorting_fn: F) {
         self.sorting_fn = Box::new(sorting_fn);
         self.resort();
     }

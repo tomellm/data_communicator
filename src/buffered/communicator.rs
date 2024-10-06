@@ -51,20 +51,24 @@ where
     }
     /// Recives any new updates and then updates the internal data accordingly
     pub fn state_update(&mut self) {
-        self.reciver
-            .recive_new()
-            .into_iter()
-            .for_each(|action| {
-                match action {
-                    RecievedAction::Change(update) => update.update_data(&mut self.data),
-                    RecievedAction::Fresh(data) => data.add_fresh_data(&mut self.data),
-                }
-                self.has_changed = true;
-            });
+        self.reciver.recive_new().into_iter().for_each(|action| {
+            match action {
+                RecievedAction::Change(update) => update.update_data(&mut self.data),
+                RecievedAction::Fresh(data) => data.add_fresh_data(&mut self.data),
+            }
+            self.has_changed = true;
+        });
     }
     pub fn query(&self, query_type: QueryType<Key, Value>) -> ImmediateValuePromise<QueryResult> {
         trace!("Recived query command.");
         self.sender.send_query(self.uuid, query_type)
+    }
+    pub fn query_future(
+        &self,
+        query_type: QueryType<Key, Value>,
+    ) -> BoxFuture<'static, Result<QueryResult, BoxedSendError>> {
+        trace!("Recived query command.");
+        self.sender.send_query_future(self.uuid, query_type)
     }
     pub fn query_action(
         &self,
@@ -75,43 +79,50 @@ where
     /// Sends out an action to update a single element
     pub fn update(&self, val: Value) -> ImmediateValuePromise<ChangeResult> {
         trace!("Recived update command.");
-        self.sender.send_change(ChangeType::Update(val))
+        self.sender.send_change(self.uuid, ChangeType::Update(val))
     }
     pub fn update_action(
         &self,
     ) -> impl FnMut(Value) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
-        let mut action = self.sender.send_change_action();
+        let mut action = self.sender.send_change_action(self.uuid);
         move |value: Value| action(ChangeType::Update(value))
     }
     pub fn update_many(&self, vals: Vec<Value>) -> ImmediateValuePromise<ChangeResult> {
         trace!("Recived update command.");
-        self.sender.send_change(ChangeType::UpdateMany(vals))
+        self.sender.send_change(self.uuid, ChangeType::UpdateMany(vals))
+    }
+    pub fn update_many_future(
+        &self,
+        vals: Vec<Value>,
+    ) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
+        trace!("Recived update command.");
+        self.sender.send_change_future(self.uuid, ChangeType::UpdateMany(vals))
     }
     pub fn update_many_action(
         &self,
     ) -> impl FnMut(Vec<Value>) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
-        let mut action = self.sender.send_change_action();
+        let mut action = self.sender.send_change_action(self.uuid);
         move |values: Vec<Value>| action(ChangeType::UpdateMany(values))
     }
     /// Sends out an action to delete a single element
     pub fn delete(&self, key: Key) -> ImmediateValuePromise<ChangeResult> {
         trace!("Recived delete command.");
-        self.sender.send_change(ChangeType::Delete(key))
+        self.sender.send_change(self.uuid, ChangeType::Delete(key))
     }
     pub fn delete_action(
         &self,
     ) -> impl FnMut(Key) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
-        let mut action = self.sender.send_change_action();
+        let mut action = self.sender.send_change_action(self.uuid);
         move |key: Key| action(ChangeType::Delete(key))
     }
     pub fn delete_many(&self, keys: Vec<Key>) -> ImmediateValuePromise<ChangeResult> {
         trace!("Recived delete many command.");
-        self.sender.send_change(ChangeType::DeleteMany(keys))
+        self.sender.send_change(self.uuid, ChangeType::DeleteMany(keys))
     }
     pub fn delete_many_action(
         &self,
     ) -> impl FnMut(Vec<Key>) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
-        let mut action = self.sender.send_change_action();
+        let mut action = self.sender.send_change_action(self.uuid);
         move |keys: Vec<Key>| action(ChangeType::DeleteMany(keys))
     }
     pub fn is_empty(&self) -> bool {
@@ -141,7 +152,7 @@ where
     pub fn data_sorted_iter(&self) -> impl Iterator<Item = &Value> {
         self.data.sorted.apply_slice(self.data()).into_iter()
     }
-    pub fn sort<F: FnMut(&Value, &Value) -> Ordering + 'static>(&mut self, sorting_fn: F) {
+    pub fn sort<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(&mut self, sorting_fn: F) {
         self.data.new_sorting_fn(sorting_fn);
     }
     pub fn keys(&self) -> Vec<&Key> {
@@ -195,24 +206,35 @@ where
     // if the result is a success
     pub fn send_change(
         &self,
+        origin_uuid: Uuid,
         action_type: ChangeType<Key, Value>,
     ) -> ImmediateValuePromise<ChangeResult> {
         let new_sender = self.change_sender.clone();
-        ImmediateValuePromise::new(Self::change_future(new_sender, action_type))
+        ImmediateValuePromise::new(Self::change_future(origin_uuid, new_sender, action_type))
+    }
+    pub fn send_change_future(
+        &self,
+        origin_uuid: Uuid,
+        action_type: ChangeType<Key, Value>,
+    ) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
+        let new_sender = self.change_sender.clone();
+        Box::pin(Self::change_future(origin_uuid, new_sender, action_type))
     }
 
     pub fn send_change_action(
         &self,
+        origin_uuid: Uuid
     ) -> impl FnMut(ChangeType<Key, Value>) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>>
     {
         let new_sender = self.change_sender.clone();
         move |action_type: ChangeType<Key, Value>| {
             let cloned_sender = new_sender.clone();
-            Box::pin(Self::change_future(cloned_sender, action_type))
+            Box::pin(Self::change_future(origin_uuid, cloned_sender, action_type))
         }
     }
 
     fn change_future(
+        origin_uuid: Uuid,
         new_sender: mpsc::Sender<Change<Key, Value>>,
         action_type: ChangeType<Key, Value>,
     ) -> impl std::future::Future<Output = Result<ChangeResult, BoxedSendError>> {
@@ -221,15 +243,15 @@ where
             let (action, reciver) = Change::from_type(action_type);
             let response = match new_sender.send(action).await {
                 Ok(()) => {
-                    debug!("Change [{action_type_str}] was sent now awaiting response.");
+                    debug!(msg = format!("Change [{action_type_str}] was sent now awaiting response."), comm = origin_uuid.to_string());
                     reciver.await.into()
                 }
                 Err(err) => {
-                    trace!("Change [{action_type_str}] returned an error [{err}]");
+                    trace!(msg = format!("Change [{action_type_str}] returned an error [{err}]"), comm = origin_uuid.to_string());
                     ChangeResult::Error(ChangeError::send_err(&err))
                 }
             };
-            info!("Result for change type [{action_type_str}] was returned, is [{response:?}]");
+            info!(msg = format!("Result for change type [{action_type_str}] was returned, is [{response:?}]"), comm = origin_uuid.to_string());
             Ok(response)
         }
     }
@@ -243,6 +265,14 @@ where
         ImmediateValuePromise::new(Self::query_future(new_sender, origin_uuid, query_type))
     }
 
+    pub fn send_query_future(
+        &self,
+        origin_uuid: Uuid,
+        query_type: QueryType<Key, Value>,
+    ) -> BoxFuture<'static, Result<QueryResult, BoxedSendError>> {
+        let new_sender = self.query_sender.clone();
+        Box::pin(Self::query_future(new_sender, origin_uuid, query_type))
+    }
     pub fn send_query_action(
         &self,
         origin_uuid: Uuid,
@@ -262,15 +292,15 @@ where
             let (query, reciver) = DataQuery::from_type(origin_uuid, query_type);
             let response = match new_sender.send(query).await {
                 Ok(()) => {
-                    debug!("Query [{query_type_str}] was sent now awaiting response.");
+                    debug!(msg = format!("Query [{query_type_str}] was sent now awaiting response."), comm = origin_uuid.to_string());
                     reciver.await.into()
                 }
                 Err(err) => {
-                    trace!("Query [{query_type_str}] returned an error [{err}]");
+                    trace!(msg = format!("Query [{query_type_str}] returned an error [{err}]"), comm = origin_uuid.to_string());
                     QueryResult::Error(QueryError::send(&err))
                 }
             };
-            info!("Result for query type [{query_type_str}] was returned, is [{response:?}]");
+            info!(msg = format!("Result for query type [{query_type_str}] was returned, is [{response:?}]"), comm = origin_uuid.to_string());
             Ok(response)
         }
     }
