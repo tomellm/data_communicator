@@ -4,10 +4,7 @@ use std::{
 };
 use tokio::sync::watch::{self, Ref};
 
-use crate::storage::GetKey;
-
-use super::changer;
-
+use super::{changer, storage::GetKey};
 
 #[derive(Clone)]
 pub struct Communicator<Key, Value>
@@ -24,20 +21,21 @@ where
     Key: Clone + Send + Sync,
     Value: GetKey<Key> + Clone + Send + Sync,
 {
+    #[must_use]
     pub(crate) fn new(
         viewer: watch::Receiver<HashMap<Key, Value>>,
         changer: changer::Sender<Key, Value>,
     ) -> Self {
-        Self {
-            viewer, changer
-        }
+        Self { viewer, changer }
     }
+    #[must_use]
     pub fn view(&self) -> Ref<'_, HashMap<Key, Value>> {
         self.viewer.borrow()
     }
     pub fn update(&mut self) {
         self.changer.update_sender();
     }
+    #[must_use]
     pub fn viewer(&self) -> watch::Receiver<HashMap<Key, Value>> {
         self.viewer.clone()
     }
