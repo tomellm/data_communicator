@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, sync::Arc};
 
 use tokio::sync::{
     mpsc,
@@ -39,8 +39,9 @@ where
     }
 }
 
-pub type Predicate<Value> = Box<dyn Fn(&Value) -> bool + Send>;
+pub type Predicate<Value> = Arc<dyn Fn(&Value) -> bool + Send + Sync>;
 
+#[derive(Clone)]
 pub enum QueryType<Key, Value>
 where
     Key: KeyBounds,
@@ -50,6 +51,22 @@ where
     GetById(Key),
     GetByIds(Vec<Key>),
     Predicate(Predicate<Value>),
+}
+
+impl<Key, Value> QueryType<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn apply(&self, value: &Value) -> bool {
+        match self {
+            Self::All => true,
+            Self::GetById(key) => key.eq(value.key()),
+            Self::GetByIds(keys) => keys.contains(value.key()),
+            Self::Predicate(predicate) => predicate(value)
+        }
+    }
+
 }
 
 impl<Key, Value> Display for QueryType<Key, Value> 
@@ -74,8 +91,8 @@ where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
 {
-    pub fn predicate<T: Fn(&Value) -> bool + Send + 'static>(pred: T) -> Self {
-        Self::Predicate(Box::new(pred))
+    pub fn predicate<T: Fn(&Value) -> bool + Send + Sync +'static>(pred: T) -> Self {
+        Self::Predicate(Arc::new(pred))
     }
 }
 

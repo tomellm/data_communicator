@@ -38,12 +38,18 @@ where
         }
     }
     pub fn extend(&mut self, extend: HashMap<Key, Value>) {
-        trace!("About to extend this data object with {} values", extend.len());
+        trace!(
+            "About to extend this data object with {} values",
+            extend.len()
+        );
         self.data.extend(extend);
         self.resort();
     }
     pub fn update(&mut self, update: Vec<Value>) {
-        trace!("About to update {} values in this data object", update.len());
+        trace!(
+            "About to update {} values in this data object",
+            update.len()
+        );
         self.data
             .extend(update.into_iter().map(|v| (v.key().clone(), v)));
         self.resort();
@@ -63,7 +69,10 @@ where
             (self.sorting_fn)(*a, *b)
         })
     }
-    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(&mut self, sorting_fn: F) {
+    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(
+        &mut self,
+        sorting_fn: F,
+    ) {
         self.sorting_fn = Box::new(sorting_fn);
         self.resort();
     }
@@ -181,6 +190,12 @@ where
         match self {
             Self::Update(values) => data.update(values),
             Self::Delete(keys) => data.delete(keys),
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Update(values) => values.len(),
+            Self::Delete(keys) => keys.len(),
         }
     }
 }

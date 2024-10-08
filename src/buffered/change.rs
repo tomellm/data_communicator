@@ -103,6 +103,7 @@ pub enum ChangeResult {
 #[derive(Debug, Clone)]
 pub enum ChangeError {
     DefaultError,
+    DatabaseError(String),
     ChannelSendError(String),
     ChannelReciveError(RecvError),
 }
