@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::buffered::{
     data::{DataChange, FreshData},
     query::{DataQuery, QueryType},
-    KeyBounds, ValueBounds,
+    GetKeys, KeyBounds, ValueBounds,
 };
 
 pub struct CommunicatorInfo<Key, Value>
@@ -44,43 +44,48 @@ where
         info.last_query = Some(query.query_type.clone());
     }
 
-    /// Takes in a target communicator and the proposed data change. Will then
-    /// use the info it stores about the communicators to evaluate every single
-    /// data point in the data change and if it should be sent to the respective
-    /// communicator. The two important things to note here are:
-    ///     - The data change can contain more data then the communicator is
-    ///     interested in meaning all of the unnessesary data should be stripped
-    ///     away
-    ///     - Newly created data will be evaluated and passed on to the
-    ///     communicator if the last performed query deems it to match.
+    /// Takes in a proposed data change. Will then use the info it stores to figure
+    /// out which communicators are interested inthat change.
+    ///
+    /// If the change is only an update or a delete then the it will only compare
+    /// the changing values to the already stored values. If the change is an
+    /// insert then it will also check if the values mach the last performed query.
     pub fn get_interested_comm(
         &self,
         update: &DataChange<Key, Value>,
     ) -> Vec<(Uuid, DataChange<Key, Value>)> {
         self.comm_to_info
             .iter()
-            .filter_map(|(comm, Info { value_keys, last_query })| {
+            .filter_map(|(comm, info)| {
                 let comm_update = match update {
-                    DataChange::Update(values) => {
+                    DataChange::Insert(values) => {
                         let new_values = values
                             .into_iter()
                             .filter(|value| {
-                                let was_last_queried = value_keys.contains(&value.key());
-                                let new_data_matches_query = if let Some(query_type) = last_query {
-                                    query_type.apply(value)
-                                } else {
-                                    false
-                                };
+                                let was_last_queried = info.value_keys.contains(&value.key());
+                                let new_data_matches_query =
+                                    if let Some(query_type) = &info.last_query {
+                                        query_type.apply(value)
+                                    } else {
+                                        false
+                                    };
                                 was_last_queried || new_data_matches_query
                             })
-                        .cloned()
+                            .cloned()
                             .collect::<Vec<_>>();
-                        DataChange::Update(new_values)
+                        DataChange::Insert(new_values)
                     }
+                    DataChange::Update(values) => DataChange::Update(
+                        values
+                            .into_iter()
+                            .filter(|value| info.value_keys.contains(&value.key()))
+                            .cloned()
+                            .collect::<Vec<_>>(),
+                    ),
                     DataChange::Delete(keys) => {
                         let new_keys = keys
                             .into_iter()
-                            .filter(|key| value_keys.contains(&key))
+                            .filter(|key| info.value_keys.contains(&key))
                             .cloned()
                             .collect::<Vec<_>>();
                         DataChange::Delete(new_keys)
@@ -88,35 +93,34 @@ where
                 };
                 match comm_update.len() {
                     0 => None,
-                    _ => Some((*comm, comm_update))
+                    _ => Some((*comm, comm_update)),
                 }
             })
-        .collect_vec()
-        
+            .collect_vec()
     }
 
-    /// The data in the data change object will eventually get to the communicator
-    /// dictating what data that communicator will view. Here we update the
-    /// containers view on what data which communicator has. Specifically we add
-    /// any new values that the communicator gets or remove any from the list
-    /// which the communicator will also delete.
+    /// Update the internal info object to reflect the data each communicator
+    /// contains. Performed when any change action is taken.
+    ///
+    /// Ignores the Update case since that doesnt add or remove new keys.
     pub fn update_info_from_change(&mut self, target: &Uuid, update: &DataChange<Key, Value>) {
         let value_keys = &mut self.comm_to_info.get_mut(target).unwrap().value_keys;
         match update {
-            DataChange::Update(values) => value_keys.extend(
-                values
-                    .into_iter()
-                    .map(|value| value.key())
-                    .cloned()
-                    .collect_vec(),
-            ),
+            DataChange::Insert(values) => {
+                value_keys.extend(values.keys().into_iter().cloned().collect_vec());
+            }
             DataChange::Delete(keys) => keys.into_iter().for_each(|key| {
                 value_keys.remove(key);
             }),
+            DataChange::Update(_) => (),
         };
     }
+
+    /// Update the internal info object to reflect the data each communicator
+    /// contains. Perfomed when the communicator queries for data.
     pub fn update_info_from_query(&mut self, target: &Uuid, fresh_data: &FreshData<Key, Value>) {
         let value_keys = &mut self.comm_to_info.get_mut(target).unwrap().value_keys;
+        value_keys.clear();
         value_keys.extend(fresh_data.keys().cloned());
     }
 }

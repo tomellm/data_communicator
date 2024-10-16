@@ -1,4 +1,7 @@
-use std::{error::Error, fmt::{Debug, Display}};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 use lazy_async_promise::BoxedSendError;
 use tokio::sync::{
@@ -6,7 +9,7 @@ use tokio::sync::{
     oneshot::{self, error::RecvError},
 };
 
-use super::{data::DataChange, KeyBounds, ValueBounds};
+use super::{data::DataChange, GetKeys, KeyBounds, ValueBounds};
 
 pub struct Change<Key: KeyBounds, Value: ValueBounds<Key>> {
     pub reponse_sender: oneshot::Sender<ChangeResult>,
@@ -16,7 +19,7 @@ pub struct Change<Key: KeyBounds, Value: ValueBounds<Key>> {
 impl<Key, Value> Change<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
     pub fn from_type(
         action_type: ChangeType<Key, Value>,
@@ -34,10 +37,12 @@ where
 
     pub fn all_keys(&self) -> Vec<&Key> {
         match &self.action {
+            ChangeType::Insert(val) => vec![val.key()],
+            ChangeType::InsertMany(vals) => vals.keys(),
             ChangeType::Update(val) => vec![val.key()],
-            ChangeType::UpdateMany(vals) => vals.iter().map(super::GetKey::key).collect(),
+            ChangeType::UpdateMany(vals) => vals.keys(),
             ChangeType::Delete(key) => vec![key],
-            ChangeType::DeleteMany(keys) => keys.iter().collect(),
+            ChangeType::DeleteMany(keys) => keys.keys(),
         }
     }
 }
@@ -45,22 +50,45 @@ where
 pub enum ChangeType<Key, Value>
 where
     Key: KeyBounds,
-    Value: ValueBounds<Key>
+    Value: ValueBounds<Key>,
 {
+    Insert(Value),
+    InsertMany(Vec<Value>),
     Update(Value),
     UpdateMany(Vec<Value>),
     Delete(Key),
     DeleteMany(Vec<Key>),
 }
 
+impl<Key, Value> ChangeType<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ChangeType::InsertMany(vals) => vals.is_empty(),
+            ChangeType::UpdateMany(vals) => vals.is_empty(),
+            ChangeType::DeleteMany(vals) => vals.is_empty(),
+            _ => false,
+        }
+    }
+}
+
 impl<Key: KeyBounds, Value: ValueBounds<Key>> Display for ChangeType<Key, Value> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Update(_) => String::from("Update"),
-            Self::UpdateMany(vals) => format!("UpdateMany({})", vals.len()),
-            Self::Delete(_) => String::from("Delete"),
-            Self::DeleteMany(vals) => format!("DeleteMany({})", vals.len()),
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Insert(_) => String::from("Insert"),
+                Self::InsertMany(vals) => format!("InsertMany({})", vals.len()),
+                Self::Update(_) => String::from("Update"),
+                Self::UpdateMany(vals) => format!("UpdateMany({})", vals.len()),
+                Self::Delete(_) => String::from("Delete"),
+                Self::DeleteMany(vals) => format!("DeleteMany({})", vals.len()),
+            }
+        )
     }
 }
 
@@ -69,7 +97,24 @@ pub enum ChangeResponse<Key: KeyBounds, Value: ValueBounds<Key>> {
     Err(ChangeError),
 }
 
-impl<Key: KeyBounds, Value: ValueBounds<Key>> ChangeResponse<Key, Value> {
+impl<Key, Value> ChangeResponse<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn empty_ok(change_type: ChangeType<Key, Value>) -> Self {
+        match change_type {
+            ChangeType::Insert(_) | ChangeType::InsertMany(_) => {
+                Self::Ok(DataChange::empty_insert())
+            }
+            ChangeType::Update(_) | ChangeType::UpdateMany(_) => {
+                Self::Ok(DataChange::empty_update())
+            }
+            ChangeType::Delete(_) | ChangeType::DeleteMany(_) => {
+                Self::Ok(DataChange::empty_delete())
+            }
+        }
+    }
     pub fn from_type_and_result(
         action_type: ChangeType<Key, Value>,
         action_result: ChangeResult,

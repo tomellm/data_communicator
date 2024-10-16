@@ -1,4 +1,6 @@
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
+
+use itertools::Itertools;
 
 pub mod change;
 pub mod communicator;
@@ -12,13 +14,41 @@ pub trait GetKey<Key> {
     fn key(&self) -> &Key;
 }
 
+impl<Key> GetKey<Key> for Key {
+    fn key(&self) -> &Key {
+        self
+    }
+}
+
+pub trait GetKeys<Key> {
+    fn keys(&self) -> Vec<&Key>;
+}
+
+impl<V, Key> GetKeys<Key> for Vec<V>
+where
+    V: GetKey<Key>
+{
+    fn keys(&self) -> Vec<&Key> {
+        self.iter().map(GetKey::key).collect_vec()
+    }
+}
+
+impl<V, Key> GetKeys<Key> for &Vec<V>
+where
+    V: GetKey<Key>
+{
+    fn keys(&self) -> Vec<&Key> {
+        self.into_iter().map(GetKey::key).collect_vec()
+    }
+}
+
 pub trait KeyBounds
 where
-    Self: Ord + Eq + Hash + Clone + Send + Sync + 'static,
+    Self: Debug + Ord + Eq + Hash + Clone + Send + Sync + 'static,
 {
 }
 
-impl<T> KeyBounds for T where T: Ord + Eq + Hash + Clone + Send + Sync + 'static {}
+impl<T> KeyBounds for T where T: Debug + Ord + Eq + Hash + Clone + Send + Sync + 'static {}
 
 pub trait ValueBounds<Key>
 where

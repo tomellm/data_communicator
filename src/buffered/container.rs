@@ -1,5 +1,4 @@
 mod comm_info;
-mod data_to_comm;
 mod reciver;
 mod resolving_actions;
 mod update_sender;
