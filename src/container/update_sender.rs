@@ -6,10 +6,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, enabled, trace, Level};
 use uuid::Uuid;
 
-use crate::buffered::{
-    data::{DataChange, FreshData},
-    utils::DrainIf,
-    KeyBounds, ValueBounds,
+use crate::{
+    change::DataChange, query::FreshData, utils::DrainIf, KeyBounds, ValueBounds
 };
 
 pub struct UpdateSender<Key, Value>

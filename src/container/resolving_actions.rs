@@ -5,10 +5,9 @@ use tokio::sync::oneshot;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::buffered::{
-    change::{Change, ChangeResponse, ChangeResult},
-    data::{DataChange, FreshData},
-    query::{DataQuery, QueryResponse, QueryResult},
+use crate::{
+    change::{Change, ChangeResponse, ChangeResult, DataChange},
+    query::{DataQuery, FreshData, QueryResponse, QueryResult},
     utils::PromiseUtilities,
     KeyBounds, ValueBounds,
 };

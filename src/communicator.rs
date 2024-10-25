@@ -1,5 +1,8 @@
+pub mod data;
+
 use std::cmp::Ordering;
 
+use data::Data;
 use futures::future::BoxFuture;
 use itertools::Itertools;
 use lazy_async_promise::BoxedSendError;
@@ -7,9 +10,10 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 use uuid::Uuid;
 
+use crate::{change::DataChange, query::FreshData};
+
 use super::{
     change::{Change, ChangeError, ChangeResult, ChangeType},
-    data::{Data, DataChange, FreshData},
     query::{DataQuery, QueryError, QueryResult, QueryType},
     KeyBounds, ValueBounds,
 };
@@ -53,8 +57,8 @@ where
     pub fn state_update(&mut self) {
         self.reciver.recive_new().into_iter().for_each(|action| {
             match action {
-                RecievedAction::Change(update) => update.update_data(&mut self.data),
-                RecievedAction::Fresh(data) => data.add_fresh_data(&mut self.data),
+                RecievedAction::Change(update) => self.data.update_data(update),
+                RecievedAction::Fresh(data) => self.data.add_fresh_data(data),
             }
             self.has_changed = true;
         });

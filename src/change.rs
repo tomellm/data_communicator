@@ -9,7 +9,7 @@ use tokio::sync::{
     oneshot::{self, error::RecvError},
 };
 
-use super::{data::DataChange, GetKeys, KeyBounds, ValueBounds};
+use super::{GetKeys, KeyBounds, ValueBounds};
 
 pub struct Change<Key: KeyBounds, Value: ValueBounds<Key>> {
     pub reponse_sender: oneshot::Sender<ChangeResult>,
@@ -181,6 +181,88 @@ impl From<ChangeResult> for Result<(), BoxedSendError> {
         match value {
             ChangeResult::Success => Ok(()),
             ChangeResult::Error(err) => Err(err.into()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum DataChange<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    // TODO: maybe add a None option, for when no change is made
+    // not sure tho if that should rather be a wrapping of this object
+    // in a Option
+    Insert(Vec<Value>),
+    Update(Vec<Value>),
+    Delete(Vec<Key>),
+}
+
+impl<Key, Value> DataChange<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    pub fn empty_insert() -> Self {
+        Self::Insert(vec![])
+    }
+    pub fn empty_update() -> Self {
+        Self::Update(vec![])
+    }
+    pub fn empty_delete() -> Self {
+        Self::Delete(vec![])
+    }
+    pub fn value_keys(&self) -> Vec<&Key> {
+        match self {
+            Self::Insert(values) => values.keys(),
+            Self::Update(values) => values.keys(),
+            Self::Delete(keys) => keys.keys(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Insert(values) => values.len(),
+            Self::Update(values) => values.len(),
+            Self::Delete(keys) => keys.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Insert(values) => values.is_empty(),
+            Self::Update(values) => values.is_empty(),
+            Self::Delete(keys) => keys.is_empty(),
+        }
+    }
+
+    pub fn is_insert(&self) -> bool {
+        matches!(self, Self::Insert(_))
+    }
+
+    pub fn is_update(&self) -> bool {
+        matches!(self, Self::Update(_))
+    }
+
+    pub fn is_delete(&self) -> bool {
+        matches!(self, Self::Delete(_))
+    }
+}
+
+impl<Key, Value> From<ChangeType<Key, Value>> for DataChange<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: ChangeType<Key, Value>) -> Self {
+        match value {
+            ChangeType::Insert(val) => Self::Insert(vec![val]),
+            ChangeType::InsertMany(vals) => Self::Insert(vals),
+            ChangeType::Update(val) => Self::Update(vec![val]),
+            ChangeType::UpdateMany(vals) => Self::Update(vals),
+            ChangeType::Delete(key) => Self::Delete(vec![key]),
+            ChangeType::DeleteMany(keys) => Self::Delete(keys),
         }
     }
 }

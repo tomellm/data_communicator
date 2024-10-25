@@ -3,10 +3,8 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use uuid::Uuid;
 
-use crate::buffered::{
-    data::{DataChange, FreshData},
-    query::{DataQuery, QueryType},
-    GetKeys, KeyBounds, ValueBounds,
+use crate::{
+    change::DataChange, query::{DataQuery, FreshData, QueryType}, GetKeys, KeyBounds, ValueBounds
 };
 
 pub struct CommunicatorInfo<Key, Value>

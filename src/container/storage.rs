@@ -2,9 +2,9 @@ use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
 use tracing::debug;
 
+use crate::{change::{ChangeResponse, ChangeResult, ChangeType}, query::{Predicate, QueryResponse, QueryType}};
+
 use super::{
-    change::{ChangeResponse, ChangeResult, ChangeType},
-    query::{Predicate, QueryResponse, QueryType},
     KeyBounds, ValueBounds,
 };
 
