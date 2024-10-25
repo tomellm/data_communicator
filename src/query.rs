@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, sync::Arc};
+use std::{collections::HashMap, error::Error, fmt::Display, ops::{Deref, DerefMut}, sync::Arc};
 
 use tokio::sync::{
     mpsc,
@@ -6,7 +6,7 @@ use tokio::sync::{
 };
 use uuid::Uuid;
 
-use super::{data::FreshData, KeyBounds, ValueBounds};
+use super::{KeyBounds, ValueBounds};
 
 pub struct DataQuery<Key, Value>
 where
@@ -175,5 +175,70 @@ impl From<Result<QueryResult, RecvError>> for QueryResult {
             Ok(result) => result,
             Err(err) => QueryResult::Error(QueryError::ChannelRecive(err)),
         }
+    }
+}
+
+
+#[derive(Clone)]
+pub struct FreshData<Key, Value>(HashMap<Key, Value>);
+
+impl<Key, Value> Deref for FreshData<Key, Value> {
+    type Target = HashMap<Key, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<Key, Value> DerefMut for FreshData<Key, Value> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<Key, Value> From<Value> for FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: Value) -> Self {
+        let mut map = HashMap::new();
+        map.insert(value.key().clone(), value);
+        FreshData(map)
+    }
+}
+
+impl<Key, Value> From<Vec<Value>> for FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: Vec<Value>) -> Self {
+        FreshData(
+            value
+                .into_iter()
+                .map(|item| (item.key().clone(), item))
+                .collect(),
+        )
+    }
+}
+
+impl<Key, Value> From<HashMap<Key, Value>> for FreshData<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: HashMap<Key, Value>) -> Self {
+        Self(value)
+    }
+}
+
+#[allow(clippy::implicit_hasher)]
+impl<Key, Value> From<FreshData<Key, Value>> for HashMap<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
+    fn from(value: FreshData<Key, Value>) -> Self {
+        value.0
     }
 }

@@ -3,7 +3,7 @@ use tokio::sync::mpsc::{self, error::TryRecvError, Receiver};
 use tracing::trace;
 use uuid::Uuid;
 
-use crate::buffered::{change::Change, query::DataQuery, KeyBounds, ValueBounds};
+use crate::{change::Change, query::DataQuery, KeyBounds, ValueBounds};
 
 use super::resolving_actions::Action;
 

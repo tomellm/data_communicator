@@ -1,9 +1,10 @@
 use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
+use tracing::debug;
+
+use crate::{change::{ChangeResponse, ChangeResult, ChangeType}, query::{Predicate, QueryResponse, QueryType}};
 
 use super::{
-    change::{ChangeResponse, ChangeResult, ChangeType},
-    query::{Predicate, QueryResponse, QueryType},
     KeyBounds, ValueBounds,
 };
 
@@ -19,7 +20,19 @@ where
         &mut self,
         action: ChangeType<Key, Value>,
     ) -> ImmediateValuePromise<ChangeResponse<Key, Value>> {
+        // TODO: This should maybe be caught on a higher level and not this far
+        // down the cain. Maybe on the communicator level. Although here its easier
+        // since its a clear point where any interaction passes through
+        if action.is_empty() {
+            return ImmediateValuePromise::new(async move {
+                debug!("Change contained no values and thus doesn't go through to storage impl.");
+                Ok(ChangeResponse::empty_ok(action))
+            })
+        }
+
         let action_future = match &action {
+            ChangeType::Insert(value) => to_boxed(self.insert(value)),
+            ChangeType::InsertMany(values) => to_boxed(self.insert_many(values)),
             ChangeType::Update(value) => to_boxed(self.update(value)),
             ChangeType::UpdateMany(values) => to_boxed(self.update_many(values)),
             ChangeType::Delete(key) => to_boxed(self.delete(key)),
@@ -32,6 +45,8 @@ where
             ))
         })
     }
+    fn insert(&mut self, value: &Value) -> impl Future<ChangeResult>;
+    fn insert_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
     fn update(&mut self, value: &Value) -> impl Future<ChangeResult>;
     fn update_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
     fn delete(&mut self, key: &Key) -> impl Future<ChangeResult>;

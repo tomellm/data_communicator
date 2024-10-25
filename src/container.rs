@@ -1,22 +1,23 @@
 mod comm_info;
-mod data_to_comm;
 mod reciver;
 mod resolving_actions;
 mod update_sender;
+mod storage;
 
 use comm_info::CommunicatorInfo;
 use itertools::Itertools;
 use reciver::Reciver;
 use resolving_actions::{Action, ResolvedAction, ResolvingAction};
+use storage::Storage;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 use update_sender::UpdateSender;
 use uuid::Uuid;
 
+use crate::{change::DataChange, query::FreshData};
+
 use super::{
     communicator::Communicator,
-    data::{DataChange, FreshData},
-    storage::Storage,
     utils::DrainIf,
     KeyBounds, ValueBounds,
 };

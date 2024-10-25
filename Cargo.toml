@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-futures = "0.3.30"
+futures = "0.3.31"
 itertools = "0.13.0"
 lazy_async_promise = { path = "/Users/tomellm/Documents/coding-projects/lazy_async_promise" } #"0.5.0"
 permutation = "0.4.1"
-tokio = { version = "1.38.0", features = ["macros"] }
+tokio = { version = "1.41.0", features = ["macros"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-uuid = { version = "1.9.1", features = ["v4"] }
+uuid = { version = "1.11.0", features = ["v4"] }
