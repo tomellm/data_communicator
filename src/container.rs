@@ -1,8 +1,8 @@
 mod comm_info;
 mod reciver;
 mod resolving_actions;
+pub mod storage;
 mod update_sender;
-mod storage;
 
 use comm_info::CommunicatorInfo;
 use itertools::Itertools;
@@ -16,11 +16,7 @@ use uuid::Uuid;
 
 use crate::{change::DataChange, query::FreshData};
 
-use super::{
-    communicator::Communicator,
-    utils::DrainIf,
-    KeyBounds, ValueBounds,
-};
+use super::{communicator::Communicator, utils::DrainIf, KeyBounds, ValueBounds};
 
 pub struct DataContainer<Key, Value, Writer>
 where
@@ -42,15 +38,19 @@ where
     Value: ValueBounds<Key>,
     Writer: Storage<Key, Value>,
 {
-    pub async fn new(storage_args: Writer::InitArgs) -> Self {
-        let storage = Writer::init(storage_args).await;
-        Self {
-            uuid: Uuid::new_v4(),
-            reciver: Reciver::default(),
-            update_sender: UpdateSender::default(),
-            comm_info: CommunicatorInfo::default(),
-            storage,
-            running_actions: Vec::default(),
+    pub fn init(
+        storage_args: Writer::InitArgs,
+    ) -> impl std::future::Future<Output = Self> + Send + 'static {
+        let storage_future = Writer::init(storage_args);
+        async move {
+            Self {
+                uuid: Uuid::new_v4(),
+                reciver: Reciver::default(),
+                update_sender: UpdateSender::default(),
+                comm_info: CommunicatorInfo::default(),
+                storage: storage_future.await,
+                running_actions: Vec::default(),
+            }
         }
     }
 
