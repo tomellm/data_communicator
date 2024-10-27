@@ -1,8 +1,8 @@
 use futures::future::BoxFuture;
 
-use super::{BoxFut, Comm};
+use super::Comm;
 
-type ActionFn = Box<dyn FnOnce(Comm) -> BoxFuture<'static, (usize, Comm)>>;
+type ActionFn = Box<dyn FnOnce(Comm) -> BoxFuture<'static, Comm> + Send>;
 
 pub(super) struct ReadyAction {
     pub(super) which: usize,
@@ -10,22 +10,33 @@ pub(super) struct ReadyAction {
 }
 
 impl ReadyAction {
-    pub(super) fn new<Function>(which: usize, action: Function) -> Self
+    pub(super) fn new<F>(which: usize, action: F) -> Self
     where
-        Function: FnOnce(Comm) -> BoxFut<Comm> + Send + 'static,
+        F: FnOnce(Comm) -> BoxFuture<'static, Comm> + Send + 'static
     {
         Self {
             which,
-            action: Box::new(move |comm| {
-                Box::pin(async move {
-                    let comm = action(comm).await;
-                    (which, comm)
-                })
-            }),
+            action: Box::new(action),
         }
     }
 
-    pub(super) fn start(self, communicator: Comm) -> BoxFut<(usize, Comm)> {
+    pub(super) fn start(self, communicator: Comm) -> BoxFuture<'static, Comm> {
         (self.action)(communicator)
     }
+}
+
+
+#[macro_export]
+macro_rules! action {
+    ($num: expr, $fun: expr) => {
+        ReadyAction::new($num, $fun)
+    };
+}
+
+
+#[macro_export]
+macro_rules! pin_fut {
+    ($func: expr) => {
+        Box::pin(async move { $func })
+    };
 }

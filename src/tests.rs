@@ -1,104 +1,160 @@
 mod action;
 mod communicators;
 mod lib_impls;
+mod sequential;
 
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, str::FromStr};
 
 use action::ReadyAction;
-use communicators::Communicators;
-use futures::future::BoxFuture;
-use itertools::Itertools;
 use lib_impls::TestStruct;
-use tokio::{sync::mpsc, task::JoinHandle, time::sleep};
-use tracing::info;
+use sequential::SequentialBuilder;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-use crate::{communicator::Communicator, container::DataContainer, query::QueryType};
+use crate::{
+    action, communicator::Communicator, container::DataContainer, pin_fut, query::QueryType,
+};
+
+type Comm = Communicator<usize, TestStruct>;
+type Cont = DataContainer<usize, TestStruct, HashMap<usize, TestStruct>>;
+
+fn sequential(len: usize) -> SequentialBuilder {
+    SequentialBuilder::new(len)
+}
+
+fn multiply<const N: usize, T: Clone>(val: T) -> [T; N] {
+    std::array::from_fn(|_| val.clone())
+}
 
 #[tokio::test]
-async fn basic_setup() {
-    let stdout_log = tracing_subscriber::fmt::layer();
-    tracing_subscriber::registry()
-        .with(stdout_log.with_filter(EnvFilter::from_str("info").unwrap()))
-        .init();
-    //console_subscriber::init();
+async fn data_should_be_shared_to_everyone() {
+    let [first_val_1, first_val_2] = multiply(TestStruct::new(1, "Hello One"));
+    let [second_val_1, second_val_2] = multiply(TestStruct::new(2, "Hello Two"));
+    let [third_val_1, third_val_2] = multiply(TestStruct::new(3, "Some more Data"));
 
-    let mut all = Communicators::init(2).await;
-
-    let mut actions = vec![
-        ReadyAction::new(1, |comm: Comm| {
-            Box::pin(async move {
+    let actions = vec![
+        action!(1, |comm| {
+            pin_fut!({
                 let _ = comm.query(QueryType::All).await;
                 comm
             })
         }),
-        ReadyAction::new(2, |comm: Comm| {
-            Box::pin(async move {
+        action!(2, |comm: Comm| {
+            pin_fut!({
                 let _ = comm.query(QueryType::All).await;
                 comm
             })
         }),
-        ReadyAction::new(1, |comm: Comm| {
-            Box::pin(async move {
-                let _ = comm
-                    .insert(TestStruct {
-                        key: 1,
-                        val: "Hello One".into(),
-                    })
-                    .await;
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(first_val_1).await;
                 comm
             })
         }),
-        ReadyAction::new(2, |comm: Comm| {
-            Box::pin(async move {
-                let _ = comm
-                    .insert(TestStruct {
-                        key: 2,
-                        val: "Hello Two".into(),
-                    })
-                    .await;
+        action!(2, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(second_val_1).await;
                 comm
             })
         }),
-        ReadyAction::new(1, |comm: Comm| {
-            Box::pin(async move {
-                let _ = comm
-                    .insert(TestStruct {
-                        key: 3,
-                        val: "Some more Data".into(),
-                    })
-                    .await;
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(third_val_1).await;
                 comm
             })
         }),
     ];
 
-    let (sender, mut reciver) = mpsc::channel(5);
-    let mut waiting = false;
+    let final_state = sequential(2).actions(actions).run().await;
 
-    loop {
-        all.state_update();
-        if let Ok(state) = reciver.try_recv() {
-            all.consume_result(state);
-            waiting = false;
-        } else if !actions.is_empty() && !waiting {
-            let next_action = actions.remove(0);
-            let action_future = all.perform_action(next_action);
-            let sender = sender.clone();
-            tokio::task::spawn(async move {
-                let output = action_future.await;
-                let _ = sender.send(output).await;
-            });
-            waiting = true;
-        } else if actions.is_empty() && !waiting {
-            break;
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-    let all_equal = all.map.values().map(|comm| comm.data.len()).all_equal();
-    assert!(all_equal)
+    assert!(final_state.all_equal_in(|comm| comm.data.len()));
+    assert!(final_state.all_contain(vec![&first_val_2, &second_val_2, &third_val_2]));
 }
 
-type Comm = Communicator<usize, TestStruct>;
-type Cont = DataContainer<usize, TestStruct, HashMap<usize, TestStruct>>;
-type BoxFut<T> = BoxFuture<'static, T>;
+#[tokio::test]
+async fn only_interesting_data_should_be_shared() {
+    let [first_val_1] = multiply(TestStruct::new(1, "Hello One"));
+    let [second_val_1] = multiply(TestStruct::new(2, "Hello Two"));
+    let [third_val_1, third_val_2] = multiply(TestStruct::new(3, "Some more Data"));
+
+    let actions = vec![
+        action!(1, |comm| {
+            pin_fut!({
+                let _ = comm.query(QueryType::All).await;
+                comm
+            })
+        }),
+        action!(2, |comm: Comm| {
+            pin_fut!({
+                let _ = comm
+                    .query(QueryType::predicate(|val: &TestStruct| {
+                        val.val.contains(&String::from("Hello"))
+                    }))
+                    .await;
+                comm
+            })
+        }),
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(first_val_1).await;
+                comm
+            })
+        }),
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(second_val_1).await;
+                comm
+            })
+        }),
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(third_val_1).await;
+                comm
+            })
+        }),
+    ];
+
+    let final_state = sequential(2).actions(actions).run().await;
+
+    assert!(final_state.comm_contains(1, &third_val_2));
+    assert!(!final_state.comm_contains(2, &third_val_2));
+}
+
+#[tokio::test]
+async fn update_should_change_values() {
+    let [first_val_1, first_val_2] = multiply(TestStruct::new(1, "Hello One"));
+    let [updated_val_1, updated_val_2] = multiply(TestStruct::new(1, "Hello Two"));
+
+    let actions = vec![
+        action!(1, |comm| {
+            pin_fut!({
+                let _ = comm.query(QueryType::All).await;
+                comm
+            })
+        }),
+        action!(2, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.query(QueryType::All).await;
+                comm
+            })
+        }),
+        action!(1, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.insert(first_val_1).await;
+                comm
+            })
+        }),
+        action!(2, |comm: Comm| {
+            pin_fut!({
+                let _ = comm.update(updated_val_1).await;
+                comm
+            })
+        }),
+    ];
+
+    let final_state = sequential(2).actions(actions).run().await;
+
+    assert!(final_state.comm_contains(1, &updated_val_2));
+    assert!(!final_state.comm_contains(1, &first_val_2));
+    assert!(final_state.comm_contains(2, &updated_val_2));
+    assert!(!final_state.comm_contains(2, &first_val_2));
+}

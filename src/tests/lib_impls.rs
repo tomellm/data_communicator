@@ -14,10 +14,16 @@ impl GetKey<usize> for TestStruct {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct TestStruct {
     pub(super) key: usize,
     pub(super) val: String,
+}
+
+impl TestStruct {
+    pub(super) fn new(key: usize, val: &str) -> Self {
+        Self { key, val: val.into() }
+    }
 }
 
 impl Storage<usize, TestStruct> for HashMap<usize, TestStruct> {
