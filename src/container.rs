@@ -1,3 +1,18 @@
+//! Single point of thrugh that interacts with the Storage.
+//!
+//! All of the queries and changes are sent here to the [`DataContainer`] which
+//! then processes them one by one and relays the changes back to every single 
+//! communicator that was created.
+//!
+//! The queries the [`DataContainer`] knows which [`Communicator`][crate::communicator::Communicator] 
+//! is interested in which data and will then also only send the imporant data
+//! to every single communicator.
+//!
+//! ### Key Information
+//! - Instantiate the container with [`init`][DataContainer::init]
+//! - Create any number of communicators with either [`communicator`][DataContainer::communicator]
+//!     or [`communicators`][DataContainer::communicators]
+//! - Finally don't forget to call [`state_update`][DataContainer::state_update]
 mod comm_info;
 mod reciver;
 mod resolving_actions;
@@ -54,10 +69,13 @@ where
         }
     }
 
-    /// For the state a number of things need to be done:
-    /// - Will collect any new actions sent by any of the Communicators and pass
-    ///   them to the Storage to be processed. The `ImmediateValuePromises` created
-    ///   by the storage will then
+    /// Does the following things:
+    /// - Updates the internal sender
+    /// - Resolves any actions that might be finished. With the finished query
+    ///     or change they either
+    ///     - Change: update all communicators that are interested
+    ///     - Query: return data to the respective communicator
+    /// - Recieve any new Actions
     pub fn state_update(&mut self) {
         self.update_sender.state_update();
         self.resolve_finished_actions()
@@ -90,8 +108,10 @@ where
         );
 
         let (change_sender, query_sender) = self.reciver.senders();
-        let (change_data_sender, change_data_reciver) = mpsc::channel(10);
-        let (fresh_data_sender, fresh_data_reciver) = mpsc::channel(10);
+
+        // WARNING: if a page is not visited in a while, these could easily fill up
+        let (change_data_sender, change_data_reciver) = mpsc::channel(20);
+        let (fresh_data_sender, fresh_data_reciver) = mpsc::channel(20);
 
         self.update_sender
             .register_senders(&new_uuid, change_data_sender, fresh_data_sender);
@@ -106,11 +126,17 @@ where
         )
     }
 
+    pub fn communicators<const N: usize>(&mut self) -> [Communicator<Key, Value>; N] {
+        std::array::from_fn(|_| self.communicator())
+    }
+
+    /// Takes a fresh [`DataChange`] which is then cloned and fitted to every
+    /// interested communicator and finally sent to each communicator.
     fn update_communicators(&mut self, update: &DataChange<Key, Value>) {
         let keys = update.value_keys();
         let communicators = self.comm_info.get_interested_comm(update);
         communicators.iter().for_each(|(target, change)| {
-            self.comm_info.update_info_from_change(&target, &change);
+            self.comm_info.update_info_from_change(target, change);
         });
 
         debug!(
@@ -125,6 +151,9 @@ where
         self.update_sender.send_change(&self.uuid, communicators);
     }
 
+    /// Takes the [`FreshData`] object and retrives the keys of it to update which
+    /// values the communicator is interested in and then finally sends the object
+    /// to the communicator.
     fn return_query(&mut self, communicator: Uuid, values: FreshData<Key, Value>) {
         let keys = values.keys().collect::<Vec<_>>();
         debug!(
@@ -140,6 +169,7 @@ where
         self.update_sender
             .send_fresh_data(&self.uuid, values, &communicator);
     }
+
 
     fn resolve_finished_actions(&mut self) -> Vec<ResolvedAction<Key, Value>> {
         // NOTE: the `is_done` function here will poll the interal state of the
@@ -160,6 +190,9 @@ where
             .collect_vec()
     }
 
+    /// Revives any new actions from the Revicers and then calls the respective
+    /// methods on the [`Storage`] implementation. The returned futures are then
+    /// placed in a vector to be retrived once done.
     fn recive_new_actions(&mut self) {
         let new_action = self
             .reciver

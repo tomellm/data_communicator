@@ -18,6 +18,50 @@ use super::{
     KeyBounds, ValueBounds,
 };
 
+/// The struct through which you view and change the data.
+///
+/// #### View
+/// To view the data the communicator has stored first perfome some kind of Query
+/// which can be done with the [`query`][Communicator::query] function. As for the
+/// available queries check out [`QueryType`].
+/// ```
+/// let _ = comm.query(QueryType::All).await;
+/// ```
+/// After quering the data can be accessed through the `data` property. Chech out the [`Data`]
+/// struct for more information on accessing the data. 
+/// ```
+/// for (key, value) in comm.data.map() {
+///     // -- your code
+/// }
+/// ```
+/// You can also view the data in a sorted manner. For that first set a sorting
+/// function with the [`sort`][Communicator::sort] function and then view the 
+/// sorted data by using the [`sorted`][Data::sorted] function on the [`Data`] object.
+/// ```
+/// // Please note that this only needs to be called once.
+/// comm.sort(|a: &Value, b: &Value| a.key().cmp(b.key()));
+///
+/// for value in comm.data.sorted() {
+///     // -- your code
+/// }
+/// ```
+/// #### Change
+/// For this simply use one of the `insert`, `update` and `delete` or the related
+/// `_many` functions. Otherwise you can also use the `_action` functions to recvive
+/// a functions that will perform the change at a later time.
+///
+/// #### reacting to change
+/// Internally the Communicator has a flag that toggles on if the data has changed.
+/// This flag can be retrived with the [`has_changed`][Communicator::has_changed]
+/// function. To tell the communicator that the data has been seen the [`set_viewed`][Communicator::set_viewed]
+/// function can be used. This function also returnes a reference to Self allowing
+/// for method chaining.
+/// ```
+/// if comm.has_changed() {
+///     comm.set_viewed()
+///         .sort(...)
+/// }
+/// ```
 pub struct Communicator<Key: KeyBounds, Value: ValueBounds<Key>>
 where
     Key: KeyBounds,
@@ -36,7 +80,7 @@ where
     Value: ValueBounds<Key>,
 {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         uuid: Uuid,
         change_sender: mpsc::Sender<Change<Key, Value>>,
         query_sender: mpsc::Sender<DataQuery<Key, Value>>,
@@ -104,7 +148,6 @@ where
         let mut action = self.sender.send_change_action(self.uuid);
         move |values: Vec<Value>| action(ChangeType::InsertMany(values))
     }
-    /// Sends out an action to update a single element
     pub fn update(&self, val: Value) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>> {
         trace!("Recived update command.");
         self.sender.send_change(self.uuid, ChangeType::Update(val))
@@ -170,7 +213,7 @@ where
     }
 }
 
-pub struct Sender<Key, Value>
+struct Sender<Key, Value>
 where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
@@ -185,7 +228,7 @@ where
     Value: ValueBounds<Key>,
 {
     #[must_use]
-    pub fn new(
+    fn new(
         change_sender: mpsc::Sender<Change<Key, Value>>,
         query_sender: mpsc::Sender<DataQuery<Key, Value>>,
     ) -> Self {
@@ -195,7 +238,7 @@ where
         }
     }
 
-    pub fn send_change(
+    fn send_change(
         &self,
         origin_uuid: Uuid,
         action_type: ChangeType<Key, Value>,
@@ -204,7 +247,7 @@ where
         Box::pin(Self::change_future(origin_uuid, new_sender, action_type))
     }
 
-    pub fn send_change_action(
+    fn send_change_action(
         &self,
         origin_uuid: Uuid,
     ) -> impl FnMut(ChangeType<Key, Value>) -> BoxFuture<'static, Result<ChangeResult, BoxedSendError>>
@@ -250,7 +293,7 @@ where
         }
     }
 
-    pub fn send_query(
+    fn send_query(
         &self,
         origin_uuid: Uuid,
         query_type: QueryType<Key, Value>,
@@ -258,7 +301,7 @@ where
         let new_sender = self.query_sender.clone();
         Box::pin(Self::query_future(new_sender, origin_uuid, query_type))
     }
-    pub fn send_query_action(
+    fn send_query_action(
         &self,
         origin_uuid: Uuid,
         query_type: QueryType<Key, Value>,
@@ -302,7 +345,7 @@ where
     }
 }
 
-pub struct Reciver<Key, Value>
+struct Reciver<Key, Value>
 where
     Key: KeyBounds,
     Value: ValueBounds<Key>,
@@ -317,7 +360,7 @@ where
     Value: ValueBounds<Key>,
 {
     #[must_use]
-    pub fn new(
+    fn new(
         change_reciver: mpsc::Receiver<DataChange<Key, Value>>,
         fresh_data_reciver: mpsc::Receiver<FreshData<Key, Value>>,
     ) -> Self {
