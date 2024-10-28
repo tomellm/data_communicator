@@ -161,7 +161,7 @@ where
     pub fn has_changed(&self) -> bool {
         self.has_changed
     }
-    pub fn set_viewed<'a>(&'a mut self) -> &'a mut Self {
+    pub fn set_viewed(&mut self) -> &mut Self {
         self.has_changed = false;
         self
     }
