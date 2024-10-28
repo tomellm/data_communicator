@@ -1,3 +1,6 @@
+#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_fn_trait_return)]
+
 use std::{fmt::Debug, hash::Hash};
 
 use itertools::Itertools;
@@ -7,6 +10,8 @@ pub mod communicator;
 pub mod container;
 pub mod query;
 pub mod utils;
+#[cfg(test)]
+mod tests;
 
 pub trait GetKey<Key> {
     fn key(&self) -> &Key;
@@ -36,7 +41,7 @@ where
     V: GetKey<Key>
 {
     fn keys(&self) -> Vec<&Key> {
-        self.into_iter().map(GetKey::key).collect_vec()
+        self.iter().map(GetKey::key).collect_vec()
     }
 }
 
