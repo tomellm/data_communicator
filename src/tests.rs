@@ -5,12 +5,16 @@ mod sequential;
 
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use lib_impls::TestStruct;
 use sequential::SequentialBuilder;
 
 use crate::{
-    assert_action, communicator::Communicator, container::DataContainer, query::QueryType,
-    ready_action,
+    assert_action,
+    communicator::Communicator,
+    container::DataContainer,
+    query::QueryType,
+    query_action, ready_action,
 };
 
 type Comm = Communicator<usize, TestStruct>;
@@ -24,6 +28,12 @@ fn multiply<const N: usize, T: Clone>(val: T) -> [T; N] {
     std::array::from_fn(|_| val.clone())
 }
 
+fn n_objects(number: usize, str: &str) -> Vec<TestStruct> {
+    (0..number)
+        .map(|n| TestStruct::new(n, str))
+        .collect_vec()
+}
+
 #[tokio::test]
 async fn data_should_be_shared_to_everyone() {
     let [first_val_1, first_val_2] = multiply(TestStruct::new(1, "Hello One"));
@@ -31,14 +41,8 @@ async fn data_should_be_shared_to_everyone() {
     let [third_val_1, third_val_2] = multiply(TestStruct::new(3, "Some more Data"));
 
     let actions = vec![
-        ready_action!(1, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
-        ready_action!(2, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
+        query_action!(1, QueryType::All),
+        query_action!(2, QueryType::All),
         ready_action!(1, |comm: Comm| async move {
             let _ = comm.insert(first_val_1).await;
             comm
@@ -66,18 +70,11 @@ async fn only_interesting_data_should_be_shared() {
     let [third_val_1, third_val_2] = multiply(TestStruct::new(3, "Some more Data"));
 
     let actions = vec![
-        ready_action!(1, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
-        ready_action!(2, |comm: Comm| async move {
-            let _ = comm
-                .query(QueryType::predicate(|val: &TestStruct| {
-                    val.val.contains(&String::from("Hello"))
-                }))
-                .await;
-            comm
-        }),
+        query_action!(1, QueryType::All),
+        query_action!(
+            2,
+            QueryType::predicate(|val: &TestStruct| { val.val.contains(&String::from("Hello")) })
+        ),
         ready_action!(1, |comm: Comm| async move {
             let _ = comm.insert(first_val_1).await;
             comm
@@ -104,14 +101,8 @@ async fn update_should_change_values() {
     let [updated_val_1, updated_val_2] = multiply(TestStruct::new(1, "Hello Two"));
 
     let actions = vec![
-        ready_action!(1, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
-        ready_action!(2, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
+        query_action!(1, QueryType::All),
+        query_action!(2, QueryType::All),
         ready_action!(1, |comm: Comm| async move {
             let _ = comm.insert(first_val_1).await;
             comm
@@ -136,14 +127,8 @@ async fn deleting_value_should_propagate_change() {
     let [to_delete_1, to_delete_2] = multiply(TestStruct::new(2, "Hello Two"));
 
     let actions = vec![
-        ready_action!(1, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
-        ready_action!(2, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
+        query_action!(1, QueryType::All),
+        query_action!(2, QueryType::All),
         ready_action!(1, |comm: Comm| async move {
             let _ = comm.insert(first_val_1).await;
             comm
@@ -172,10 +157,7 @@ async fn new_insert_should_change_has_changed_flag() {
     let [val] = multiply(TestStruct::new(1, "Hello One"));
 
     let actions = vec![
-        ready_action!(1, |comm: Comm| async move {
-            let _ = comm.query(QueryType::All).await;
-            comm
-        }),
+        query_action!(1, QueryType::All),
         assert_action!(|data| {
             let comm = data.communicators.get(&1).unwrap();
             assert!(comm.is_empty());
@@ -222,6 +204,28 @@ async fn sort_data_should_sort_data_accordingly() {
                 .cloned()
                 .eq(vec![a_2, b_2, c_2]));
         }),
+    ];
+
+    sequential(1).actions(actions).run().await;
+}
+
+#[tokio::test]
+async fn pagination_sould_return_correct_page_and_page_size() {
+    let [values] = multiply(n_objects(30, "test"));
+
+    let actions = vec![
+        query_action!(1, QueryType::All),
+        ready_action!(1, |comm: Comm| async move {
+            let _ = comm.insert_many(values).await;
+            comm
+        }),
+        assert_action!(move |data| {
+            let comm = data.get(1);
+            let values = (0..10).map(|n| *comm.data.sorted().get(n).unwrap()).collect_vec();
+            assert_eq!(comm.data.page(0, 10), Some(values));
+            let values = (20..30).map(|n| *comm.data.sorted().get(n).unwrap()).collect_vec();
+            assert_eq!(comm.data.page(1, 20), Some(values));
+        })
     ];
 
     sequential(1).actions(actions).run().await;

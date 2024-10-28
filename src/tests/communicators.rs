@@ -26,6 +26,10 @@ impl Communicators {
         }
     }
 
+    pub fn get(&self, num: usize) -> &Comm {
+        self.communicators.get(&num).unwrap()
+    }
+
     pub fn state_update(&mut self) {
         self.container.state_update();
         self.communicators
@@ -39,7 +43,8 @@ impl Communicators {
             Action::Assert(assert_action) => {
                 self.perform_assert(assert_action);
                 None
-            }
+            },
+            Action::End => None
         }
     }
 

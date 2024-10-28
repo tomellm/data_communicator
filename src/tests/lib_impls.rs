@@ -14,7 +14,7 @@ impl GetKey<usize> for TestStruct {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) struct TestStruct {
     pub(super) key: usize,
     pub(super) val: String,

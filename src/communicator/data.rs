@@ -140,7 +140,7 @@ where
     }
     /// This has to take the data as sorted otherwise the pagination will make
     /// little sense and is potentially inconsistent
-    pub fn page(&mut self, page: usize, per_page: usize) -> Option<Vec<&Value>> {
+    pub fn page(&self, page: usize, per_page: usize) -> Option<Vec<&Value>> {
         self.sorted()
             .chunks(per_page)
             .nth(page)

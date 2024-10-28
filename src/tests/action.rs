@@ -5,6 +5,7 @@ use super::{communicators::Communicators, Comm};
 pub(super) enum Action {
     Action(ReadyAction),
     Assert(AssertAction),
+    End,
 }
 
 pub(super) struct AssertAction {
@@ -36,6 +37,31 @@ impl ReadyAction {
     }
 }
 
+/// Macro to more easily create [Action::Assert]
+/// Is a shorthand for:
+/// ```
+/// Action::Assert(
+///     AssertAction {
+///         assert: Box::new($assert)
+///     }
+/// )
+/// ```
+/// The function passed to the macro should look like this:
+/// ```
+/// |data: &Communicators| {
+///     // -- your asserts
+/// }
+/// ```
+#[macro_export]
+macro_rules! assert_action {
+    ($assert: expr) => {
+        $crate::tests::action::Action::Assert(
+            $crate::tests::action::AssertAction {
+                assert: Box::new($assert)
+            }
+        )
+    };
+}
 
 /// Macor to easily create [Action::Action]
 /// Is shorthand for:
@@ -66,28 +92,12 @@ macro_rules! ready_action {
     };
 }
 
-/// Macro to more easily create [Action::Assert]
-/// Is a shorthand for:
-/// ```
-/// Action::Assert(
-///     AssertAction {
-///         assert: Box::new($assert)
-///     }
-/// )
-/// ```
-/// The function passed to the macro should look like this:
-/// ```
-/// |data: &Communicators| {
-///     // -- your asserts
-/// }
-/// ```
 #[macro_export]
-macro_rules! assert_action {
-    ($assert: expr) => {
-        $crate::tests::action::Action::Assert(
-            $crate::tests::action::AssertAction {
-                assert: Box::new($assert)
-            }
-        )
+macro_rules! query_action {
+    ($num: expr, $query: expr) => {
+        ready_action!($num, |comm: $crate::tests::Comm| async move {
+            let _ = comm.query($query).await;
+            comm
+        })
     };
 }
