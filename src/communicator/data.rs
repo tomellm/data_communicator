@@ -24,7 +24,7 @@ where
     Value: ValueBounds<Key>,
 {
     #[must_use]
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         let data = HashMap::new();
         let sorting_fn = |a: &Value, b: &Value| a.key().cmp(b.key());
         Self {
@@ -33,19 +33,19 @@ where
             sorting_fn: Box::new(sorting_fn),
         }
     }
-    pub fn add_fresh_data(&mut self, data: FreshData<Key, Value>) {
+    pub(super) fn add_fresh_data(&mut self, data: FreshData<Key, Value>) {
         self.extend(data.into());
     }
     /// Internally decides how the data is mutated depending in the data update
     /// state
-    pub fn update_data(&mut self, change: DataChange<Key, Value>) {
+    pub(super) fn update_data(&mut self, change: DataChange<Key, Value>) {
         match change {
             DataChange::Insert(values) => self.insert(values),
             DataChange::Update(values) => self.update(values),
             DataChange::Delete(keys) => self.delete(keys),
         }
     }
-    pub fn extend(&mut self, extend: HashMap<Key, Value>) {
+    pub(super) fn extend(&mut self, extend: HashMap<Key, Value>) {
         trace!(
             "About to extend this data object with {} values",
             extend.len()
@@ -53,7 +53,7 @@ where
         self.data.extend(extend);
         self.resort();
     }
-    pub fn insert(&mut self, insert: Vec<Value>) {
+    pub(super) fn insert(&mut self, insert: Vec<Value>) {
         trace!(
             "About to insert {} new values in this data object",
             insert.len()
@@ -62,7 +62,7 @@ where
             .extend(insert.into_iter().map(|v| (v.key().clone(), v)));
         self.resort();
     }
-    pub fn update(&mut self, update: Vec<Value>) {
+    pub(super) fn update(&mut self, update: Vec<Value>) {
         trace!(
             "About to update {} values in this data object",
             update.len()
@@ -76,7 +76,7 @@ where
         }
         self.resort();
     }
-    pub fn delete(&mut self, keys: Vec<Key>) {
+    pub(super) fn delete(&mut self, keys: Vec<Key>) {
         let mut count = 0;
         for key in keys.iter() {
             if self.data.remove(key).is_some() {
@@ -86,12 +86,12 @@ where
         trace!("Delete {count} value from this data object");
         self.resort();
     }
-    pub fn resort(&mut self) {
+    pub(super) fn resort(&mut self) {
         self.sorted = permutation::sort_by(self.data.values().collect_vec(), |a, b| {
             (self.sorting_fn)(*a, *b)
         })
     }
-    pub fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(
+    pub(super) fn new_sorting_fn<F: FnMut(&Value, &Value) -> Ordering + Send + 'static>(
         &mut self,
         sorting_fn: F,
     ) {

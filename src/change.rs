@@ -1,7 +1,6 @@
-use std::{
-    error::Error,
-    fmt::{Debug, Display},
-};
+//! Contains all of the structs related to change requests, responses and more.
+
+use std::{error::Error, fmt::Display};
 
 use lazy_async_promise::BoxedSendError;
 use tokio::sync::{
@@ -11,7 +10,11 @@ use tokio::sync::{
 
 use super::{GetKeys, KeyBounds, ValueBounds};
 
-pub struct Change<Key: KeyBounds, Value: ValueBounds<Key>> {
+pub(crate) struct Change<Key, Value>
+where
+    Key: KeyBounds,
+    Value: ValueBounds<Key>,
+{
     pub reponse_sender: oneshot::Sender<ChangeResult>,
     pub action: ChangeType<Key, Value>,
 }
@@ -35,16 +38,16 @@ where
         )
     }
 
-    pub fn all_keys(&self) -> Vec<&Key> {
-        match &self.action {
-            ChangeType::Insert(val) => vec![val.key()],
-            ChangeType::InsertMany(vals) => vals.keys(),
-            ChangeType::Update(val) => vec![val.key()],
-            ChangeType::UpdateMany(vals) => vals.keys(),
-            ChangeType::Delete(key) => vec![key],
-            ChangeType::DeleteMany(keys) => keys.keys(),
-        }
-    }
+    //pub(crate) fn all_keys(&self) -> Vec<&Key> {
+    //    match &self.action {
+    //        ChangeType::Insert(val) => vec![val.key()],
+    //        ChangeType::InsertMany(vals) => vals.keys(),
+    //        ChangeType::Update(val) => vec![val.key()],
+    //        ChangeType::UpdateMany(vals) => vals.keys(),
+    //        ChangeType::Delete(key) => vec![key],
+    //        ChangeType::DeleteMany(keys) => keys.keys(),
+    //    }
+    //}
 }
 
 pub enum ChangeType<Key, Value>

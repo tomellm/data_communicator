@@ -1,3 +1,5 @@
+//! Contains all of the structs related to query requests, responses and more.
+
 use std::{collections::HashMap, error::Error, fmt::Display, ops::{Deref, DerefMut}, sync::Arc};
 
 use tokio::sync::{
@@ -8,7 +10,7 @@ use uuid::Uuid;
 
 use super::{KeyBounds, ValueBounds};
 
-pub struct DataQuery<Key, Value>
+pub(crate) struct DataQuery<Key, Value>
 where
     Key: KeyBounds,
     Value: ValueBounds<Key>,

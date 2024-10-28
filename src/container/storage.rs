@@ -1,3 +1,6 @@
+//! Any implementor of the [`Storage`] trait can act as the "database" for the 
+//! system
+
 use futures::future::BoxFuture;
 use lazy_async_promise::ImmediateValuePromise;
 use tracing::debug;
@@ -8,7 +11,9 @@ use super::{
     KeyBounds, ValueBounds,
 };
 
-pub trait Storage<Key: KeyBounds, Value: ValueBounds<Key>>
+/// Any implementor of the [`Storage`] trait can act as the "database" for the 
+/// system.
+pub trait Storage<Key, Value>
 where
     Self: Send + Sync,
     Key: KeyBounds,
@@ -16,6 +21,24 @@ where
 {
     type InitArgs;
     fn init(args: Self::InitArgs) -> impl InitFuture<Self>;
+
+    fn insert(&mut self, value: &Value) -> impl Future<ChangeResult>;
+    fn insert_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
+    fn update(&mut self, value: &Value) -> impl Future<ChangeResult>;
+    fn update_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
+    fn delete(&mut self, key: &Key) -> impl Future<ChangeResult>;
+    fn delete_many(&mut self, keys: &[Key]) -> impl Future<ChangeResult>;
+
+    fn get_all(&mut self) -> impl Future<QueryResponse<Key, Value>>;
+    fn get_by_id(&mut self, key: Key) -> impl Future<QueryResponse<Key, Value>>;
+    // TODO: this function could technically have a default implementation
+    // where it just uses the predicate function to do a search
+    fn get_by_ids(&mut self, keys: Vec<Key>) -> impl Future<QueryResponse<Key, Value>>;
+    fn get_by_predicate(
+        &mut self,
+        predicate: Predicate<Value>,
+    ) -> impl Future<QueryResponse<Key, Value>>;
+
     fn handle_change(
         &mut self,
         action: ChangeType<Key, Value>,
@@ -25,7 +48,7 @@ where
         // since its a clear point where any interaction passes through
         if action.is_empty() {
             return ImmediateValuePromise::new(async move {
-                debug!("Change contained no values and thus doesn't go through to storage impl.");
+                debug!(msg = "Change contained no values and thus doesn't go through to storage impl.");
                 Ok(ChangeResponse::empty_ok(action))
             })
         }
@@ -40,17 +63,11 @@ where
         };
         ImmediateValuePromise::new(async move {
             Ok(ChangeResponse::from_type_and_result(
-                action,
-                action_future.await,
+                    action,
+                    action_future.await,
             ))
         })
     }
-    fn insert(&mut self, value: &Value) -> impl Future<ChangeResult>;
-    fn insert_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
-    fn update(&mut self, value: &Value) -> impl Future<ChangeResult>;
-    fn update_many(&mut self, values: &[Value]) -> impl Future<ChangeResult>;
-    fn delete(&mut self, key: &Key) -> impl Future<ChangeResult>;
-    fn delete_many(&mut self, keys: &[Key]) -> impl Future<ChangeResult>;
     fn handle_query(
         &mut self,
         query: QueryType<Key, Value>,
@@ -63,15 +80,6 @@ where
         };
         ImmediateValuePromise::new(async move { Ok(query_future.await) })
     }
-    fn get_all(&mut self) -> impl Future<QueryResponse<Key, Value>>;
-    fn get_by_id(&mut self, key: Key) -> impl Future<QueryResponse<Key, Value>>;
-    // TODO: this function could technically have a default implementation
-    // where it just uses the predicate function to do a search
-    fn get_by_ids(&mut self, keys: Vec<Key>) -> impl Future<QueryResponse<Key, Value>>;
-    fn get_by_predicate(
-        &mut self,
-        predicate: Predicate<Value>,
-    ) -> impl Future<QueryResponse<Key, Value>>;
 }
 
 pub trait InitFuture<FutOutput>
